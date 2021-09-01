@@ -20,5 +20,7 @@ Title
 \item{\code{is_PE}}{logical.}
 
 \item{\code{out_dir}}{character.}
+
+\item{\code{macs2_path}}{character}
 }}
 

@@ -1,0 +1,79 @@
+---
+title: "peaksat_overview"
+author: "joe boyd"
+date: "9/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+peaksat is a barebones R package to do Peak Saturation analysis.
+
+Peak Saturation is a part of the quality control process and is useful for determining the potential benifit of deeper sequencing for improving peak calls.  When libraries are too shallow, only a semi-random subset of peaks are called.  This package provides methods for randomly subsetting bam files at fixed depth intervals and calling peaks via macs2 on each.  As a result we can produce a curve of peak count vs read count and (with enough reads) estimate the total number of peaks that are potentially callable in each sequecning library.  This also allows us to determine that either the library has reached saturation or roughly estimate how many reads would be required to reach saturation.
+
+It requires an existing isntallation of macs2, which can be on your PATH or specified explicity when calling submit_peaksat_jobs() or via the PS_MACS2_PATH option.
+
+It also currently requires SGE (Sun Grid Engine) to run.
+
+Basically, just run it on Stein Galaxy server for now and everything should be fine.
+
+
+## Usage
+
+A vector of treatment (this is macs2's term for the pulldown samples, not whatever treatment an experiment may be testing) bam files matched with control (macs2's term for input or non-pulldown) bam files.  If the same control bam is applicable to all treatment bams, only a single control bam is sufficient.
+
+```{r init}
+library(peaksat)
+library(magrittr)
+#set optional options
+#peaksat uses the macs2 on your PATH by default but can be overriden by setting the PS_MACS2_PATH option
+PS_OPTIONS$PS_MACS2_PATH = "/usr/local/bin/macs2"
+#peaksat will output to you current directory or use this option is set
+PS_OPTIONS$PS_OUTDIR = "~/peaksat_overview"
+```
+
+Next we need to make a configuration object.
+
+```{r config}
+#Importantly, these options will not impact any configuration objects already created.
+ps = peaksat_config(stat = PS_STATS$qValue, stat_value = .01, is_PE = FALSE)
+#Explicitly setting out_dir and macs2_path will override settings in the options.
+ps.2 = peaksat_config(stat = PS_STATS$qValue, stat_value = .01, is_PE = FALSE, 
+                      out_dir = "~/peak_saturation2", 
+                      macs2_path = "/slipstream/home/joeboyd/anaconda2/bin/macs2")
+```
+
+And the last thing we need is bam files.
+
+```{r files}
+#This is just basic file matching.
+treat_files = "/slipstream/galaxy/uploads/working/qc_framework/output" %>%
+  dir(pattern = "MCF.+_H3K4ME3", full.names = TRUE) %>%
+  dir(pattern = ".bam$", full.names = TRUE)
+
+#Always use the deepest input available per sample.  Input depth has a big impact on peak calling.
+#Although we have individual input replicates we could use, we just want the pooled versions.
+input_files = "/slipstream/galaxy/uploads/working/qc_framework/output" %>%
+  dir(pattern = "MCF.+_input_pool", full.names = TRUE) %>%
+  dir(pattern = ".bam$", full.names = TRUE)
+#We have 3 treatment bams per cell line.
+input_files = rep(input_files, each = 3)
+```
+
+Finally we can submit the subset/peak call jobs.
+
+```{r submit}
+#await_completion = TRUE will hold up R until all submitted jobs have completed. This is useful so you can wait to run the remainder of a script that depends on peaksat completing.
+#if you don't want that, set await_completion = FALSE
+jids = submit_peaksat_jobs(ps, treat_bams = treat_files, ctrl_bams = input_files, await_completion = TRUE)
+```
+
+Once all jobs have finished we can make plots.
+
+```{r plot}
+
+```

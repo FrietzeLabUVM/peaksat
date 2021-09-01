@@ -1,6 +1,4 @@
 #!/bin/bash
-#$ -o sub_logs/subset."$JOB_ID".out
-#$ -e sub_logs/subset."$JOB_ID".error
 
 se_cmd="--nomodel --extsize 180"
 pe_cmd="--format BAMPE"
@@ -59,6 +57,11 @@ else
 fi
 
 log=${prefix}.log
+
+if[ -f ${samp_bam}.read_count ] & [ -f ${samp_bam}.peak_count ]; then
+  echo Results are present, delete ${samp_bam}.read_count or ${samp_bam}.peak_count to allow rerun.
+  exit 0
+fi
 
 if [ $fraction = 1 ]; then
   echo fraction is 1 >> $log
