@@ -59,9 +59,13 @@ peaksat_config = function(stat = valid_stats$qValue,
   new("peaksat_config", stat = stat, stat_value = stat_value, is_PE = is_PE, out_dir = out_dir, macs2_path = macs2_path, submit_script = submit_script)
 }
 
+get_str = function(pc){
+  paste0(pc@stat, "_", formatC(pc@stat_value*1e3, width = 3, format = "d", flag = "0"))
+}
+
 make_stat_arg = function(pc, out_dir = getOption("PS_OUTDIR", getwd())){
-  str = paste0(pc@stat, "_", formatC(pc@stat_value*1e3, width = 3, format = "d", flag = "0"))
-  out = paste0(stat2flag[pc@stat], " ", pc@stat_value, " -o ", file.path(paste0("results_", str)), ifelse(pc@is_PE, " -pe", ""))
+  str = get_str(pc)
+  out = paste0(stat2flag[pc@stat], " ", pc@stat_value, " -o ", get_result_dir(pc), ifelse(pc@is_PE, " -pe", ""))
   names(out) = str
   out
 }
@@ -76,6 +80,19 @@ get_run_script = function(){
 
 get_macs2_path = function(){
   getOption("PS_MACS2_PATH", system("which macs2", intern = TRUE))
+}
+
+#' Title
+#'
+#' @param pc
+#'
+#' @return
+#' @export
+#'
+#' @examples
+get_result_dir = function(pc){
+  str = get_str(pc)
+  file.path(pc@out_dir, paste0("results_", str))
 }
 
 #' Title

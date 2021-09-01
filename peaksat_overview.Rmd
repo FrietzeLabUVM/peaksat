@@ -75,5 +75,12 @@ jids = submit_peaksat_jobs(ps, treat_bams = treat_files, ctrl_bams = input_files
 Once all jobs have finished we can make plots.
 
 ```{r plot}
-
+library(data.table)
+library(ggplot2)
+wds = dir("results_qValue_010/", full.names = TRUE)
+cnt_dt = load_counts(wds)
+cnt_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "_", keep = 1:3)]
+cnt_dt[, is_max := read_count == max(read_count), .(sample)]
+lab_dt = cnt_dt[is_max == TRUE]
+lab_dt
 ```

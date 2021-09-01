@@ -7,6 +7,14 @@ capture_jid = function(qsub_str){
   regBetween(qsub_str, "job ", "[0-9]+", " \\(")
 }
 
+#' watch_jids
+#'
+#' @param hold_jids
+#'
+#' @return
+#' @export
+#'
+#' @examples
 watch_jids = function(hold_jids){
   pending = hold_jids
   last_len = length(pending)
