@@ -58,7 +58,7 @@ fi
 
 log=${prefix}.log
 
-if[ -f ${samp_bam}.read_count ] & [ -f ${samp_bam}.peak_count ]; then
+if [ -f ${samp_bam}.read_count ] && [ -f ${samp_bam}.peak_count ]; then
   echo Results are present, delete ${samp_bam}.read_count or ${samp_bam}.peak_count to allow rerun.
   exit 0
 fi

@@ -24,6 +24,8 @@ Basically, just run it on Stein Galaxy server for now and everything should be f
 
 ## Usage
 
+### Setup
+
 A vector of treatment (this is macs2's term for the pulldown samples, not whatever treatment an experiment may be testing) bam files matched with control (macs2's term for input or non-pulldown) bam files.  If the same control bam is applicable to all treatment bams, only a single control bam is sufficient.
 
 ```{r init}
@@ -64,6 +66,8 @@ input_files = "/slipstream/galaxy/uploads/working/qc_framework/output" %>%
 input_files = rep(input_files, each = 3)
 ```
 
+### Run Peak Saturation
+
 Finally we can submit the subset/peak call jobs.
 
 ```{r submit}
@@ -72,15 +76,119 @@ Finally we can submit the subset/peak call jobs.
 jids = submit_peaksat_jobs(ps, treat_bams = treat_files, ctrl_bams = input_files, await_completion = TRUE)
 ```
 
-Once all jobs have finished we can make plots.
+Once all jobs have finished we can make plots, but first we need to load the read and peak count data like so:
 
-```{r plot}
+```{r load counts}
+cnt_dt = load_counts(ps)
+head(cnt_dt)
+```
+
+### Plots
+
+This data is tidy formatted to be usable with ggplot.
+
+There are a couple included plotting functions.
+
+```{r plot_peak_saturation_lines}
+plot_peak_saturation_lines(cnt_dt)
+```
+
+```{r plot_peak_saturation_lines.facetted}
+plot_peak_saturation_lines.facetted(cnt_dt)
+```
+
+For more control of these included plot functions, simply filter the input data.table
+
+As an example, we'll just look at the pooled samples.  In my opinion the 2 pooled samples here have begun to saturate.
+
+```{r}
+plot_peak_saturation_lines(cnt_dt[grepl("pool", sample)])
+```
+
+Or just the MCF10A reps.
+
+```{r}
+plot_peak_saturation_lines(cnt_dt[grepl("MCF10A.+_R[12]", sample)])
+```
+
+To do more sophisticated plots, you can simply work with cnt_dt and use ggplot.
+
+```{r plot colored}
 library(data.table)
 library(ggplot2)
-wds = dir("results_qValue_010/", full.names = TRUE)
-cnt_dt = load_counts(wds)
 cnt_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "_", keep = 1:3)]
 cnt_dt[, is_max := read_count == max(read_count), .(sample)]
 lab_dt = cnt_dt[is_max == TRUE]
 lab_dt
+```
+
+```{r plot by rep, fig.width=10, fig.height=3.5}
+ggplot(cnt_dt, aes(x = read_count, y = peak_count, group = sample, color = cell)) +
+  geom_path() +
+  geom_point(data = lab_dt) +
+  # geom_text(data = lab_dt, aes(label = paste(cell, mark, rep), x = read_count + 800e3), hjust = 0, show.legend = FALSE) +
+  scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  labs(x = "reads (M)", y = "peaks (k)") +
+  cowplot::theme_cowplot() +
+  scale_color_brewer(palette = "Set1") +
+  facet_wrap(~rep)
+```
+```{r plot by cell, fig.width=7, fig.height=3.5}
+ggplot(cnt_dt, aes(x = read_count, y = peak_count, group = sample, color = rep)) +
+  geom_path() +
+  geom_point(data = lab_dt) +
+  # geom_text(data = lab_dt, aes(label = paste(cell, mark, rep), x = read_count + 800e3), hjust = 0, show.legend = FALSE) +
+  scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  labs(x = "reads (M)", y = "peaks (k)") +
+  cowplot::theme_cowplot() +
+  scale_color_brewer(palette = "Dark2") +
+  facet_wrap(~cell)
+```
+
+### Depth Estimate
+
+The final piece of this analysis is to estimate the read depth required for saturation. 
+
+peaksat has two methods for this purpose. One uses linear regression, the other logarithmic regression.
+
+#### Linear
+
+Run like this :
+
+```{r depth linear}
+depth_estimate.lin = estimate_depth.linear(cnt_dt, min_read_count = 15e6)
+```
+
+Results in a table.
+
+```{r depth linear table}
+DT::datatable(depth_estimate.lin$estimates[, .(sample, peak_count_k = round(saturation_peak_count / 1e3, 2), read_count_M = round(saturation_read_count / 1e6, 2))])
+```
+
+... and plots.
+
+```{r depth linear plots}
+depth_estimate.lin$plots
+```
+
+#### Logarithmic
+
+Run like this :
+
+```{r depth log}
+depth_estimate.log = estimate_depth.log(cnt_dt, min_read_count = 5e6, target_peaks = 18e3)
+```
+
+Results in a table.
+
+```{r depth log table}
+DT::datatable(depth_estimate.log$estimates[, .(sample, peak_count_k = round(saturation_peak_count / 1e3, 2), read_count_M = round(saturation_read_count / 1e6, 2))])
+```
+
+... and plots.
+
+```{r depth log plot}
+cowplot::plot_grid(plotlist = depth_estimate.log$plots)
 ```

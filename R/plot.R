@@ -1,5 +1,16 @@
-load_counts(ps){
- wds = dir(ps@out_dir, full.names = TRUE)
+#' load_counts
+#'
+#' @param ps
+#'
+#' @return
+#' @export
+#'
+#' @examples
+load_counts = function(ps){
+
+ wds = dir(get_result_dir(ps), full.names = TRUE)
+ wds = wds[basename(wds) != "sub_logs"]
+ load_counts.wd(wds)
 }
 
 #' Title
@@ -8,7 +19,7 @@ load_counts(ps){
 #'
 #' @return
 #' @export
-#' @import data.table
+#'
 #' @examples
 load_counts.wd = function(wds){
   cn = c("name", "seed", "fraction", "stat", "cutoff", "PE", "input")
@@ -17,24 +28,20 @@ load_counts.wd = function(wds){
     read_count_files = dir(wd, pattern = "read_count$", full.names = TRUE)
     peak_count_files = dir(wd, pattern = "peak_count$", full.names = TRUE)
 
-
     names(read_count_files) = sub(".bam.+", "", basename(read_count_files))
     names(peak_count_files) = sub(".bam.+", "", basename(peak_count_files))
 
-    rc_dt = lapply(read_count_files, data.table::fread, col.names = c("read_count", cn)) %>%
-      data.table::rbindlist(idcol = "wd")
-    pc_dt = lapply(peak_count_files, data.table::fread, col.names = c("peak_count", cn)) %>%
-      data.table::rbindlist(idcol = "wd")
+    rc_dt =  data.table::rbindlist(lapply(read_count_files, data.table::fread, col.names = c("read_count", cn)), idcol = "wd")
+    pc_dt =  data.table::rbindlist(lapply(peak_count_files, data.table::fread, col.names = c("peak_count", cn)), idcol = "wd")
 
+    cnt_dt = merge(rc_dt, pc_dt[, c("name", "peak_count")], by = "name")
 
-    cnt_dt = merge(rc_dt, pc_dt[, .(name, peak_count)], by = "name")
-
-    cnt_dt[, c("fraction", "rep") := data.table::tstrsplit(name, "\\.", keep = 2:3)]
-    cnt_dt[, fraction := as.numeric(fraction)/100]
+    data.table::set(cnt_dt, j = c("fraction", "rep"), value = data.table::tstrsplit(cnt_dt$name, "\\.", keep = 2:3))
+    cnt_dt$fraction = as.numeric(cnt_dt$fraction)/100
 
     cnt_dt$sample = sub("peak_saturation.", "", basename(wd))
 
-    cnt_dt[order(read_count)]
+    cnt_dt[order(cnt_dt$read_count),]
   }
 
   wds = wds[basename(wds) != "sub_logs"]
@@ -58,23 +65,23 @@ load_counts.wd = function(wds){
   cnt_dt
 }
 
-
-
-ggplot(cnt_dt, aes(x = read_count, y = peak_count, group = sample, color = cell)) +
-  geom_path() +
-  geom_point(data = lab_dt) +
-  geom_text(data = lab_dt, aes(label = paste(cell, mark, rep), x = read_count + 800e3), hjust = 0, show.legend = FALSE) +
-  scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
-  scale_y_continuous(labels = function(x)x/1e3) +
-  labs(x = "reads (M)", y = "peaks (k)") +
-  cowplot::theme_cowplot()
-
+#' Title
+#'
+#' @param cnt_dt
+#'
+#' @return
+#' @export
+#' @import ggplot2
+#' @examples
 plot_peak_saturation_lines = function(cnt_dt){
+  lab_dt = data.table::rbindlist(lapply(split(cnt_dt, cnt_dt$sample), function(x){
+    x[x$read_count == max(x$read_count),]
+  }))
+  lab_dt$read_count_lab = lab_dt$read_count + 8e5
   p_lines = ggplot(cnt_dt, aes(x = read_count, y = peak_count, group = sample)) +
     geom_path() +
     geom_point(data = lab_dt) +
-    geom_text(data = lab_dt, aes(label = sample, x = read_count + 800e3), hjust = 0) +
-    # scale_x_continuous(expand = c(.1, 2e9))
+    geom_text(data = lab_dt, aes(label = sample, x = read_count_lab), hjust = 0) +
     scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
     scale_y_continuous(labels = function(x)x/1e3) +
     labs(x = "reads (M)", y = "peaks (k)") +
@@ -82,7 +89,19 @@ plot_peak_saturation_lines = function(cnt_dt){
   p_lines
 }
 
+#' Title
+#'
+#' @param cnt_dt
+#'
+#' @return
+#' @export
+#' @import ggplot2
+#' @examples
 plot_peak_saturation_lines.facetted = function(cnt_dt){
+  lab_dt = data.table::rbindlist(lapply(split(cnt_dt, cnt_dt$sample), function(x){
+    x[x$read_count == max(x$read_count),]
+  }))
+  lab_dt$read_count_lab = lab_dt$read_count + 8e5
   p = ggplot(cnt_dt, aes(x = read_count, y = peak_count, group = sample)) +
     cowplot::theme_cowplot() + theme(strip.text = element_text(size = 8)) +
     scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
@@ -101,5 +120,3 @@ plot_peak_saturation_lines.facetted = function(cnt_dt){
   p_lines2
 }
 
-plot_peak_saturation_lines(cnt_dt)
-plot_peak_saturation_lines.facetted(cnt_dt)
