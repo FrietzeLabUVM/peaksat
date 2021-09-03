@@ -141,4 +141,3 @@ estimate_depth.log = function(cnt_dt, target_peaks = NULL, min_read_count = 5e6,
   plots_estimate = lapply(res_estimate, function(x)x[[2]])
   return(list(estimates = dt_estimate, plots = plots_estimate))
 }
-

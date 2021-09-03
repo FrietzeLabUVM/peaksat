@@ -85,7 +85,8 @@ plot_peak_saturation_lines = function(cnt_dt){
     scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
     scale_y_continuous(labels = function(x)x/1e3) +
     labs(x = "reads (M)", y = "peaks (k)") +
-    cowplot::theme_cowplot()
+    cowplot::theme_cowplot() +
+    expand_limits(y = 0)
   p_lines
 }
 
@@ -115,7 +116,8 @@ plot_peak_saturation_lines.facetted = function(cnt_dt){
   p = p +
     geom_path() +
     geom_point(data = lab_dt) +
-    facet_wrap(~sample)
+    facet_wrap(~sample) +
+    expand_limits(y = 0)
   p_lines2 = p
   p_lines2
 }

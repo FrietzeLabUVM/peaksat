@@ -45,7 +45,7 @@ peaksat_config = function(stat = valid_stats$qValue,
   stopifnot(stat %in% valid_stats)
   stopifnot(stat_value > .001)
   if(!dir.exists(out_dir))
-    dir.create(out_dir, showWarnings = FALSE)
+    dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
   out_dir = normalizePath(out_dir)
 
   run_script = file.path(dirname(submit_script), "run_subsample_peak.sh")
