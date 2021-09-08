@@ -19,7 +19,8 @@ setClass("peaksat_config",
            is_PE = "logical",
            out_dir = "character",
            macs2_path = "character",
-           submit_script = "character"
+           submit_script = "character",
+           job_scheduler = "character"
          ))
 
 #' Title
@@ -40,10 +41,12 @@ peaksat_config = function(stat = valid_stats$qValue,
                           is_PE = FALSE,
                           out_dir = getOption("PS_OUTDIR", file.path(getwd(), "peak_saturation")),
                           macs2_path = get_macs2_path(),
-                          submit_script = get_submit_script()){
+                          submit_script = get_submit_script(),
+                          job_scheduler = "SGE"){
 
   stopifnot(stat %in% valid_stats)
   stopifnot(stat_value > .001)
+  stopifnot(job_scheduler %in% c("SGE", "SLURM"))
   if(!dir.exists(out_dir))
     dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
   out_dir = normalizePath(out_dir)
@@ -56,7 +59,14 @@ peaksat_config = function(stat = valid_stats$qValue,
     stop("run_script not found!: ", run_script)
   }
 
-  new("peaksat_config", stat = stat, stat_value = stat_value, is_PE = is_PE, out_dir = out_dir, macs2_path = macs2_path, submit_script = submit_script)
+  new("peaksat_config",
+      stat = stat,
+      stat_value = stat_value,
+      is_PE = is_PE,
+      out_dir = out_dir,
+      macs2_path = macs2_path,
+      submit_script = submit_script,
+      job_scheduler = job_scheduler)
 }
 
 get_str = function(pc){
@@ -122,7 +132,9 @@ make_submit_cmd = function(pc,
          " -n ",
          paste(sep = "_", sub(".bam", "", basename(treatment)), names(stat_arg)),
          " ",
-         stat_arg)
+         stat_arg,
+         " -js ",
+         pc@job_scheduler)
 }
 
 #' Title

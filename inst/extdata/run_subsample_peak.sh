@@ -1,4 +1,13 @@
 #!/bin/bash
+#SBATCH --nodes=1                               # Request one core
+#SBATCH --ntasks-per-node=1                               # Request one node (if you request more than one core with -n, also using
+#SBATCH --cpus-per-task=1                                           # -N 1 means all cores will be on the same node)
+#SBATCH -t 0-06:00                         # Runtime in D-HH:MM format
+#SBATCH -p bluemoon                           # Partition to run in
+#SBATCH --mem=10000                        # Memory total in MB (for all cores)
+#SBATCH -o sub_logs/peaksaturation_%j.out                 # File to which STDOUT will be written, including job ID
+#SBATCH -e sub_logs/peaksaturation_%j.err                 # File to which STDERR will be written, including job ID
+
 
 se_cmd="--nomodel --extsize 180"
 pe_cmd="--format BAMPE"
