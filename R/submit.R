@@ -172,15 +172,19 @@ submit_peaksat_jobs = function(pc,
     c_bam = ctrl_bams[i]
     make_submit_cmd(pc = pc, treatment = t_bam, control = c_bam)
   })
+  jids = sapply(cmds, function(cmd_sub){
+    qsub_str = system(cmd_sub, intern = TRUE)
+    jid = capture_jid(qsub_str)
+    jid
+  })
+  PS_OPTIONS$PS_JOB_IDS = c(getOption("PS_JOB_IDS", character()), jids)
+
   if(await_completion){
-    jids = qsub_and_wait(cmds)
+    message(length(jids), "subset-callpeak jobs have been submitted to scheduler. Will await their completion before continuing. This behavior can be controlled with 'await_completion = TRUE/FALSE'.  'load_counts()' will not work properly until all jobs have finished.")
+    watch_jids(jids)
   }else{
-    jids = sapply(cmds, function(cmd_sub){
-      qsub_str = system(cmd_sub, intern = TRUE)
-      jid = capture_jid(qsub_str)
-      jid
-    })
-    PS_OPTIONS$PS_JOB_IDS = c(getOption("PS_JOB_IDS", character()), jids)
+    message(length(jids), "subset-callpeak jobs have been submitted to scheduler. Use watch_jids() to monitor. 'load_counts()' will not work properly until all jobs have finished.")
   }
+
   invisible(jids)
 }

@@ -23,7 +23,8 @@ capture_jid = function(qsub_str, job_scheduler = "SGE"){
 #' @export
 #'
 #' @examples
-watch_jids = function(hold_jids, job_scheduler = "SGE"){
+watch_jids = function(hold_jids = getOption("PS_JOB_IDS", NULL), job_scheduler = "SGE"){
+  if(is.null(hold_jids)) stop("Not hold_jids were given to watch.")
   pending = hold_jids
   last_len = length(pending)
   stat_str = ""

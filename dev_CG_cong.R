@@ -26,9 +26,9 @@ todo = lapply(mark_grouped, function(mark_dt){
   merge(mark_dt, dt_inputs, by = "cell")
 })
 
-pc = peaksat_config(out_dir = "~/peak_saturation/CG_MCF10_Core_Targets_2")
+pc = peaksat_config(out_dir = "~/peak_saturation/CG_MCF10_Core_Targets")
 pc
-
+td = todo[[1]]
 lapply(todo, function(td){
   submit_peaksat_jobs(pc = pc, treat_bams = td$file, ctrl_bams = td$input_file, await_completion = FALSE)
 })
