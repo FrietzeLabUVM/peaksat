@@ -29,6 +29,10 @@ make_meta_pool_cmd = function(pc,
   )
 }
 
+get_meta_bam_file = function(pc, bam_group_name){
+  file.path(pc@out_dir, "pooled_bams", paste0(bam_group_name, "_meta.bam"))
+}
+
 #' Title
 #'
 #' @param pc
@@ -41,7 +45,7 @@ make_meta_pool_cmd = function(pc,
 #' @export
 #'
 #' @examples
-submit_meta_pool_jobs = function(pc, bam_groups, bam_group_names = names(bams), pool_script = get_pool_script(), skip_peaksat = FALSE){
+submit_meta_pool_jobs = function(pc, bam_groups, bam_group_names = names(bams), pool_script = get_pool_script()){
   if(!is.list(bam_groups)){
     bam_groups = list(bam_groups)
   }
@@ -54,14 +58,20 @@ submit_meta_pool_jobs = function(pc, bam_groups, bam_group_names = names(bams), 
   if(any(duplicated(names(bam_groups)))){
     stop("bam_group_names must be unique")
   }
-  cmds = sapply(names(bams), function(nam){
-    bams = bams[[nam]]
+  cmds = sapply(names(bam_groups), function(nam){
+    bams = bam_groups[[nam]]
     make_meta_pool_cmd(pc, bams, paste0(nam, "_meta"))
   })
-  cmd_outs = sapply(cmds, system, intern = TRUE)
-  jids = sapply(cmd_outs, function(cmd_out){
-    jid = capture_jid(cmd_out)
-    jid
-  })
+  cmd_outs = lapply(cmds, system, intern = TRUE)
+  if(pc@job_scheduler %in% c("SGE", "SLURM")){
+    jids = sapply(cmd_outs, function(cmd_out){
+      jid = capture_jid(cmd_out)
+      jid
+    })
+  }else{
+    jids = character()
+  }
   PS_OPTIONS$PS_JOB_IDS = c(getOption("PS_JOB_IDS", character()), jids)
+  names(jids) = get_meta_bam_file(pc, names(jids))
+  jids
 }

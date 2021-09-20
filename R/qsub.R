@@ -25,7 +25,7 @@ capture_jid = function(qsub_str, job_scheduler = "SGE"){
     str = strsplit(qsub_str, " ")[[1]]
     str[length(str)]
   }else if(job_scheduler == "bash"){
-    0
+    character()
   }else{
     stop("job_scheduler must be one of SGE or SLURM was ", job_scheduler)
   }

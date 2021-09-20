@@ -5,6 +5,8 @@ stat_arg="-p .001"
 pe_arg=""
 js="SGE"
 no_model=""
+hold=""
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -t|--treatment) chip_bam="$2"; shift ;;
@@ -20,14 +22,24 @@ while [[ "$#" -gt 0 ]]; do
         -o|--outpath) out="$2"; shift;;
         -js|--job-scheduler) js="$2"; shift;;
         -noModel|--noModel) no_model="--noModel";;
+        -h|--hold_jid) hold_jid="$2"; shift;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
 done
 
+
+
 if [ $js != "SGE" ] && [ $js != "SLURM" ] && [ $js != "bash" ]; then
   echo Job scheduler must be either SGE, SLURM, or bash.  Was ${js}.
   exit 1
+fi
+
+if [ $js == "SGE" ]; then
+  hold="-hold_jid $hold_jid"
+fi
+if [ $js == "SLURM" ]; then
+  hold="-d afterok:$hold_jid"
 fi
 
 if [ -z $macs2_path ]; then echo --macs2 macs2 path is required. exit 1; fi
@@ -66,13 +78,13 @@ for i in 2; do
   #for frac in 10 13 17 20 23 27 30 33 37 40 43 47 50 53 57 60 63 67 70 73 77 80 83 87 90 93 97; do
   for frac in 10 20 30 40 50 60 70 80 90; do
     if [ $js == SGE ]; then
-      cmd="qsub -cwd -o ${out}/sub_logs -e ${out}/sub_logs ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f .${frac} -n subset.0${frac}.${i} -s ${i} -wd ${wd} $stat_arg $g_arg $pe_arg $no_model"
+      cmd="qsub $hold -cwd -o ${out}/sub_logs -e ${out}/sub_logs ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f .${frac} -n subset.0${frac}.${i} -s ${i} -wd ${wd} $stat_arg $g_arg $pe_arg $no_model"
       if [ ! -f  ${wd}/subset.0${frac}.${i}_peaks.narrowPeak ]; then
         sub_out=$($cmd)
         echo $frac $i $sub_out
       fi
     elif [ $js == SLURM ]; then
-      cmd="sbatch ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f .${frac} -n subset.0${frac}.${i} -s ${i} -wd ${wd} $stat_arg $g_arg $pe_arg $no_model"
+      cmd="sbatch $hold ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f .${frac} -n subset.0${frac}.${i} -s ${i} -wd ${wd} $stat_arg $g_arg $pe_arg $no_model"
       if [ ! -f  ${wd}/subset.0${frac}.${i}_peaks.narrowPeak ]; then
         sub_out=$($cmd)
         echo $frac $i $sub_out
@@ -89,10 +101,10 @@ done
 
 if [ ! -f  ${wd}/subset.100.1_peaks.narrowPeak ]; then
   if [ $js == SGE ]; then
-    sub_out=$(qsub -cwd -o ${out}/sub_logs -e ${out}/sub_logs ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f 1 -n subset.100.1 -s 1 -wd ${wd} $stat_arg $g_arg $pe_arg $no_model)
+    sub_out=$(qsub $hold -cwd -o ${out}/sub_logs -e ${out}/sub_logs ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f 1 -n subset.100.1 -s 1 -wd ${wd} $stat_arg $g_arg $pe_arg $no_model)
     echo $frac $i $sub_out
   elif [ $js == SLURM ]; then
-    sub_out=$(sbatch ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f 1 -n subset.100.1 -s 1 -wd ${wd} $stat_arg $g_arg $pe_arg $no_model)
+    sub_out=$(sbatch $hold ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f 1 -n subset.100.1 -s 1 -wd ${wd} $stat_arg $g_arg $pe_arg $no_model)
     echo $frac $i $sub_out
   elif [ $js == bash ]; then
     bash ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f 1 -n subset.100.1 -s 1 -wd ${wd} $stat_arg $g_arg $pe_arg $no_model

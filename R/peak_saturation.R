@@ -13,8 +13,15 @@
 make_submit_cmd = function(pc,
                            treatment,
                            control,
-                           submit_script = get_submit_script()){
+                           submit_script = get_submit_script(),
+                           hold_jid = NULL){
   stat_arg = make_stat_arg(pc, out_dir = pc@out_dir)
+
+  hold_arg = ifelse(is.null(hold_jid),
+                    character(),
+                    paste0(" -h ", hold_jid)
+  )
+
   paste0("bash ",
          submit_script,
          " -m ",
@@ -30,7 +37,8 @@ make_submit_cmd = function(pc,
          " ",
          stat_arg,
          " -js ",
-         pc@job_scheduler)
+         pc@job_scheduler,
+         hold_arg)
 }
 
 
@@ -50,6 +58,7 @@ make_submit_cmd = function(pc,
 submit_peaksat_jobs = function(pc,
                                treat_bams,
                                ctrl_bams,
+                               hold_jid_map = NULL,
                                await_completion = TRUE){
   if(length(ctrl_bams) != length(treat_bams)){
     if(length(ctrl_bams) != 1){
@@ -64,10 +73,19 @@ submit_peaksat_jobs = function(pc,
   if(any(!file.exists(ctrl_bams))){
     stop("not all treat_bams exist!: ", paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
   }
+
+  treat_bams = normalizePath(treat_bams)
+  ctrl_bams = normalizePath(ctrl_bams)
+  if(!is.null(hold_jid_map)){
+    stopifnot(file.exists(names(hold_jid_map)))
+    names(hold_jid_map) = normalizePath(names(hold_jid_map))
+  }
+
   cmds = sapply(seq_along(treat_bams), function(i){
     t_bam = treat_bams[i]
     c_bam = ctrl_bams[i]
-    make_submit_cmd(pc = pc, treatment = t_bam, control = c_bam)
+    hold_jid = ifelse(is.null(hold_jid_map), NULL, hold_jid_map[t_bam])
+    make_submit_cmd(pc = pc, treatment = t_bam, control = c_bam, hold_jid = hold_jid)
   })
   cmd_outs = sapply(cmds, function(cmd_sub){
     qsub_str = system(cmd_sub, intern = TRUE)
