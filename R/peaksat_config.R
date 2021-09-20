@@ -1,4 +1,4 @@
-valid_job_schedulers = c("SGE", "SLURM", "none")
+valid_job_schedulers = c("SGE", "SLURM", "bash")
 
 #' Title
 #'
@@ -28,7 +28,7 @@ setClass("peaksat_config",
            samtools_path = "character",
            submit_script = "character",
            job_scheduler = "character",
-           noModel = "logical",
+           noModel = "logical"
          ))
 
 #' Title
