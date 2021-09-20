@@ -15,6 +15,7 @@ setMethod("names", "PS_OPTIONS",
           function(x)
           {
             c(
+              "PS_SAMTOOLS_PATH",
               "PS_MACS2_PATH",
               "PS_OUTDIR",
               "PS_JOB_IDS"

@@ -1,3 +1,17 @@
+valid_job_schedulers = c("SGE", "SLURM", "none")
+
+get_submit_command = function(job_scheduler = valid_job_schedulers[1]){
+  if(job_scheduler == "SGE"){
+    "qsub -cwd"
+  }else if(job_scheduler == "SLURM"){
+    "sbatch"
+  }else if(job_scheduler == "none"){
+    "bash"
+  }else{
+    stop("job_scheduler must be one of SGE, SLURM, or none was ", job_scheduler)
+  }
+}
+
 regBetween = function(x, reg_left, reg_capture, reg_right){
   reg_full = paste0("(?<=", reg_left, ")", reg_capture, "(?=", reg_right, ")")
   regmatches(x, regexpr(reg_full, x, perl = TRUE))
@@ -10,6 +24,8 @@ capture_jid = function(qsub_str, job_scheduler = "SGE"){
     #qsub_str = "Submitted batch job 5701948"
     str = strsplit(qsub_str, " ")[[1]]
     str[length(str)]
+  }else if(job_scheduler == "none"){
+    0
   }else{
     stop("job_scheduler must be one of SGE or SLURM was ", job_scheduler)
   }
@@ -36,6 +52,8 @@ watch_jids = function(hold_jids = getOption("PS_JOB_IDS", NULL), job_scheduler =
       qstat_jid = regBetween(qstat_str, " ", "[0-9]+", " ")
     }else if(job_scheduler == "SLURM"){
       qstat_jid = system("squeue --format=%i", intern = TRUE)
+    }else if(job_scheduler == "none"){
+      break
     }else{
       stop("job_scheduler must be one of SGE or SLURM was ", job_scheduler)
     }

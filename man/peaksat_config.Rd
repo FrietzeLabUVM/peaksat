@@ -10,7 +10,9 @@ peaksat_config(
   is_PE = FALSE,
   out_dir = getOption("PS_OUTDIR", file.path(getwd(), "peak_saturation")),
   macs2_path = get_macs2_path(),
-  submit_script = get_submit_script()
+  samtools_path = get_samtools_path(),
+  submit_script = get_submit_script(),
+  job_scheduler = "SGE"
 )
 }
 \arguments{

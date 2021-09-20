@@ -4,3 +4,7 @@
 .Ruserdata
 results_*
 sub_logs
+*.pdf
+dev_CG_cong-copy_jrb.R
+*.sh.*
+pooled_bams

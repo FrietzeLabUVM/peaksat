@@ -21,6 +21,8 @@ Title
 
 \item{\code{out_dir}}{character.}
 
-\item{\code{macs2_path}}{character}
+\item{\code{macs2_path}}{character.}
+
+\item{\code{samtools_path}}{character.}
 }}
 

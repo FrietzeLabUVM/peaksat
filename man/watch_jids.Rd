@@ -4,7 +4,7 @@
 \alias{watch_jids}
 \title{watch_jids}
 \usage{
-watch_jids(hold_jids)
+watch_jids(hold_jids = getOption("PS_JOB_IDS", NULL), job_scheduler = "SGE")
 }
 \arguments{
 \item{hold_jids}{}

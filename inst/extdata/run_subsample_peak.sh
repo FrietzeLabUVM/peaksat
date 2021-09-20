@@ -15,7 +15,7 @@ f_cmd=${se_cmd}
 stat="-p .001"
 pe=SE
 input=noInput
-
+no_model=""
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -t|--treatment) chip_bam="$2"; shift ;;
@@ -26,9 +26,11 @@ while [[ "$#" -gt 0 ]]; do
         -wd|--workdir) wd="$2"; shift ;;
         -g|--genome) g="$2"; shift ;;
         -m|--macs2) macs2_path="$2"; shift ;;
+        -st|--samtools) samtools_path="$2"; shift;;
         -pe|--paired-end) f_cmd=${pe_cmd}; pe=PE ;;
         -p|--pval) stat="-p $2"; shift;;
         -q|--qval) stat="-q $2"; shift;;
+        -noModel|--noModel) no_model="--noModel";;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
@@ -36,6 +38,10 @@ done
 
 if [ -z $macs2_path ]; then echo --macs2 macs2 path is required. exit 1; fi
 if [ ! -f $macs2_path ]; then echo --macs2 $macs2_path file not found. exit 1; fi
+if [ -z $samtools_path ]; then echo --samtools samtools path is required. exit 1; fi
+if [ ! -f $samtools_path ]; then echo --samtools $samtools_path file not found. exit 1; fi
+
+
 echo chip_bam is $chip_bam
 echo input_bam is $input_bam
 echo fraction is $fraction
@@ -74,19 +80,19 @@ fi
 
 if [ $fraction = 1 ]; then
   echo fraction is 1 >> $log
-  echo "samtools view -c $chip_bam to ${samp_bam}.read_count" >> $log
-  echo $(samtools view -c $chip_bam) ${name} ${seed} ${fraction} ${stat} ${pe} ${input} > ${samp_bam}.read_count
-  macs_cmd="$macs2_path callpeak -t $chip_bam ${c_cmd} -g $g -n $prefix ${p_cmd} ${f_cmd}"
+  echo "$samtools_path view -c $chip_bam to ${samp_bam}.read_count" >> $log
+  echo $($samtools_path view -c $chip_bam) ${name} ${seed} ${fraction} ${stat} ${pe} ${input} > ${samp_bam}.read_count
+  macs_cmd="$macs2_path callpeak -t $chip_bam ${c_cmd} -g $g -n $prefix ${p_cmd} ${f_cmd} ${no_model}"
   echo $macs_cmd >> $log
   $macs_cmd
 else
-  echo "samtools view -s ${seed}${fraction} -b $chip_bam to $samp_bam" >> $log
-  samtools view -s ${seed}${fraction} -b $chip_bam > $samp_bam
-  echo "samtools index $samp_bam" >> $log
-  samtools index $samp_bam
-  echo "samtools view -c $samp_bam to ${samp_bam}.read_count" >> $log
-  echo $(samtools view -c $samp_bam) ${name} ${seed} ${fraction} ${stat} ${pe} ${input} > ${samp_bam}.read_count
-  macs_cmd="$macs2_path callpeak -t $samp_bam ${c_cmd} -g $g -n $prefix ${p_cmd} ${f_cmd}"
+  echo "$samtools_path view -s ${seed}${fraction} -b $chip_bam to $samp_bam" >> $log
+  $samtools_path view -s ${seed}${fraction} -b $chip_bam > $samp_bam
+  echo "$samtools_path index $samp_bam" >> $log
+  $samtools_path index $samp_bam
+  echo "$samtools_path view -c $samp_bam to ${samp_bam}.read_count" >> $log
+  echo $($samtools_path view -c $samp_bam) ${name} ${seed} ${fraction} ${stat} ${pe} ${input} > ${samp_bam}.read_count
+  macs_cmd="$macs2_path callpeak -t $samp_bam ${c_cmd} -g $g -n $prefix ${p_cmd} ${f_cmd} ${no_model}"
   echo $macs_cmd >> $log
   $macs_cmd
   if [ -f ${prefix}_peaks.narrowPeak ]; then
