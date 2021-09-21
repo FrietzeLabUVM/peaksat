@@ -4,7 +4,13 @@
 \alias{make_submit_cmd}
 \title{Title}
 \usage{
-make_submit_cmd(pc, treatment, control, submit_script = get_submit_script())
+make_submit_cmd(
+  psc,
+  treatment,
+  control,
+  submit_script = get_submit_script(),
+  hold_jid = NULL
+)
 }
 \value{
 
@@ -15,8 +21,8 @@ Title
 \examples{
 treat_bam = "/slipstream/galaxy/uploads/working/qc_framework/output/MCF10A_H3K4AC_R1/MCF10A_H3K4AC_R1.bam"
 ctrl_bam = "/slipstream/galaxy/uploads/working/qc_framework/output/MCF10A_input_R1/MCF10A_input_R1.bam"
-pc = peaksat_config()
-cmd = make_submit_cmd(pc, treat_bam, ctrl_bam)
+psc = peaksat_config()
+cmd = make_submit_cmd(psc, treat_bam, ctrl_bam)
 sub_out = system(cmd, intern = TRUE)
 sub_out
 }

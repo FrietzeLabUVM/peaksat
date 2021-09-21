@@ -1,6 +1,6 @@
 #' make_pool_cmd
 #'
-#' @param pc
+#' @param psc
 #' @param bams
 #' @param name
 #' @param pool_script
@@ -9,33 +9,37 @@
 #' @export
 #'
 #' @examples
-make_meta_pool_cmd = function(pc,
+make_meta_pool_cmd = function(psc,
                               bams,
                               name,
                               pool_script = get_pool_script()){
-
-  #TODO no hardcode qsub
-  paste0(get_submit_command(pc@job_scheduler),
+  p_bam_dir = file.path(get_pool_dir(psc), "pooled_bams")
+  log_dir = file.path(p_bam_dir, "sub_logs")
+  dir.create(p_bam_dir, showWarnings = FALSE, recursive = TRUE)
+  dir.create(log_dir, showWarnings = FALSE, recursive = TRUE)
+  paste0(get_submit_command(psc@job_scheduler),
+         " -o ", log_dir,
+         " -e ", log_dir,
          " ",
          pool_script,
          " -st ",
-         pc@samtools_path,
+         psc@samtools_path,
          " -b ",
          paste(bams, collapse = ','),
          " -n ",
          name,
          " -wd ",
-         file.path(pc@out_dir, "pooled_bams")
+         file.path(psc@out_dir, "pooled_bams")
   )
 }
 
-get_meta_bam_file = function(pc, bam_group_name){
-  file.path(pc@out_dir, "pooled_bams", paste0(bam_group_name, "_meta.bam"))
+get_meta_bam_file = function(psc, bam_group_name){
+  file.path(psc@out_dir, "pooled_bams", paste0(bam_group_name, "_meta.bam"))
 }
 
 #' Title
 #'
-#' @param pc
+#' @param psc
 #' @param bams
 #' @param name
 #' @param pool_script
@@ -45,7 +49,7 @@ get_meta_bam_file = function(pc, bam_group_name){
 #' @export
 #'
 #' @examples
-submit_meta_pool_jobs = function(pc, bam_groups, bam_group_names = names(bams), pool_script = get_pool_script()){
+submit_meta_pool_jobs = function(psc, bam_groups, bam_group_names = names(bams), pool_script = get_pool_script()){
   if(!is.list(bam_groups)){
     bam_groups = list(bam_groups)
   }
@@ -60,10 +64,10 @@ submit_meta_pool_jobs = function(pc, bam_groups, bam_group_names = names(bams), 
   }
   cmds = sapply(names(bam_groups), function(nam){
     bams = bam_groups[[nam]]
-    make_meta_pool_cmd(pc, bams, paste0(nam, "_meta"))
+    make_meta_pool_cmd(psc = psc, bams = bams, name = paste0(nam, "_meta"))
   })
   cmd_outs = lapply(cmds, system, intern = TRUE)
-  if(pc@job_scheduler %in% c("SGE", "SLURM")){
+  if(psc@job_scheduler %in% c("SGE", "SLURM")){
     jids = sapply(cmd_outs, function(cmd_out){
       jid = capture_jid(cmd_out)
       jid
@@ -72,6 +76,6 @@ submit_meta_pool_jobs = function(pc, bam_groups, bam_group_names = names(bams), 
     jids = character()
   }
   PS_OPTIONS$PS_JOB_IDS = c(getOption("PS_JOB_IDS", character()), jids)
-  names(jids) = get_meta_bam_file(pc, names(jids))
+  names(jids) = get_meta_bam_file(psc, names(jids))
   jids
 }

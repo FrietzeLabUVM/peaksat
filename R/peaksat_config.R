@@ -1,4 +1,3 @@
-valid_job_schedulers = c("SGE", "SLURM", "bash")
 
 #' Title
 #'
@@ -42,8 +41,8 @@ setClass("peaksat_config",
 #' @export
 #'
 #' @examples
-#' pc = peaksat_config()
-#' call_submit_script(pc, "treat.bam", "ctrl.bam")
+#' psc = peaksat_config()
+#' call_submit_script(psc, "treat.bam", "ctrl.bam")
 peaksat_config = function(stat = valid_stats$qValue,
                           stat_value = .01,
                           is_PE = FALSE,

@@ -6,28 +6,29 @@
 #' @examples
 #' treat_bam = "/slipstream/galaxy/uploads/working/qc_framework/output/MCF10A_H3K4AC_R1/MCF10A_H3K4AC_R1.bam"
 #' ctrl_bam = "/slipstream/galaxy/uploads/working/qc_framework/output/MCF10A_input_R1/MCF10A_input_R1.bam"
-#' pc = peaksat_config()
-#' cmd = make_submit_cmd(pc, treat_bam, ctrl_bam)
+#' psc = peaksat_config()
+#' cmd = make_submit_cmd(psc, treat_bam, ctrl_bam)
 #' sub_out = system(cmd, intern = TRUE)
 #' sub_out
-make_submit_cmd = function(pc,
+make_submit_cmd = function(psc,
                            treatment,
                            control,
                            submit_script = get_submit_script(),
                            hold_jid = NULL){
-  stat_arg = make_stat_arg(pc, out_dir = pc@out_dir)
+  stat_arg = make_stat_arg(psc, out_dir = psc@out_dir)
 
-  hold_arg = ifelse(is.null(hold_jid),
-                    character(),
-                    paste0(" -h ", hold_jid)
-  )
+  if(is.null(hold_jid)){
+    hold_arg = character()
+  }else{
+    hold_arg = paste0(" -h ", hold_jid)
+  }
 
   paste0("bash ",
          submit_script,
          " -m ",
-         pc@macs2_path,
+         psc@macs2_path,
          " -st ",
-         pc@samtools_path,
+         psc@samtools_path,
          " -t ",
          treatment,
          " -c ",
@@ -37,14 +38,14 @@ make_submit_cmd = function(pc,
          " ",
          stat_arg,
          " -js ",
-         pc@job_scheduler,
+         psc@job_scheduler,
          hold_arg)
 }
 
 
 #' Title
 #'
-#' @param pc
+#' @param psc
 #' @param treat_bams
 #' @param ctrl_bams
 #' @param macs2_path
@@ -55,7 +56,7 @@ make_submit_cmd = function(pc,
 #' @export
 #'
 #' @examples
-submit_peaksat_jobs = function(pc,
+submit_peaksat_jobs = function(psc,
                                treat_bams,
                                ctrl_bams,
                                hold_jid_map = NULL,
@@ -68,24 +69,39 @@ submit_peaksat_jobs = function(pc,
     }
   }
   if(any(!file.exists(treat_bams))){
-    stop("not all treat_bams exist!: ", paste(treat_bams[!file.exists(treat_bams)], collapse = ", "))
+    if(is.null(hold_jid_map)){
+      stop("not all treat_bams exist!: ", paste(treat_bams[!file.exists(treat_bams)], collapse = ", "))
+    }else{
+      message("not all treat_bams exists, hopefully they will by time held jobs (hold_jid_map) finishes.")
+      message(paste(treat_bams[!file.exists(treat_bams)], collapse = ", "))
+    }
+
   }
   if(any(!file.exists(ctrl_bams))){
-    stop("not all treat_bams exist!: ", paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
+    if(is.null(hold_jid_map)){
+      stop("not all ctrl_bams exist!: ", paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
+    }else{
+      message("not all ctrl_bams exists, hopefully they will by time held jobs (hold_jid_map) finishes.")
+      message(paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
+    }
+
   }
 
-  treat_bams = normalizePath(treat_bams)
-  ctrl_bams = normalizePath(ctrl_bams)
+  treat_bams = suppressWarnings(normalizePath(treat_bams))
+  ctrl_bams = suppressWarnings(normalizePath(ctrl_bams))
   if(!is.null(hold_jid_map)){
-    stopifnot(file.exists(names(hold_jid_map)))
-    names(hold_jid_map) = normalizePath(names(hold_jid_map))
+    names(hold_jid_map) = suppressWarnings(normalizePath(names(hold_jid_map)))
   }
 
   cmds = sapply(seq_along(treat_bams), function(i){
     t_bam = treat_bams[i]
     c_bam = ctrl_bams[i]
-    hold_jid = ifelse(is.null(hold_jid_map), NULL, hold_jid_map[t_bam])
-    make_submit_cmd(pc = pc, treatment = t_bam, control = c_bam, hold_jid = hold_jid)
+    if(is.null(hold_jid_map)){
+      hold_jid = NULL
+    }else{
+      hold_jid = hold_jid_map[t_bam]
+    }
+    make_submit_cmd(psc = psc, treatment = t_bam, control = c_bam, hold_jid = hold_jid)
   })
   cmd_outs = sapply(cmds, function(cmd_sub){
     qsub_str = system(cmd_sub, intern = TRUE)

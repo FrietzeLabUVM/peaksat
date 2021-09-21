@@ -4,7 +4,13 @@
 \alias{submit_peaksat_jobs}
 \title{Title}
 \usage{
-submit_peaksat_jobs(pc, treat_bams, ctrl_bams, await_completion = TRUE)
+submit_peaksat_jobs(
+  psc,
+  treat_bams,
+  ctrl_bams,
+  hold_jid_map = NULL,
+  await_completion = TRUE
+)
 }
 \arguments{
 \item{await_completion}{}

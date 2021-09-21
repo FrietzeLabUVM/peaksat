@@ -1,5 +1,3 @@
-valid_job_schedulers = c("SGE", "SLURM", "bash")
-
 get_submit_command = function(job_scheduler = valid_job_schedulers[1]){
   if(job_scheduler == "SGE"){
     "qsub -cwd"

@@ -5,8 +5,6 @@
 #SBATCH -t 0-06:00                         # Runtime in D-HH:MM format
 #SBATCH -p bluemoon                           # Partition to run in
 #SBATCH --mem=10000                        # Memory total in MB (for all cores)
-#SBATCH -o sub_logs/pool_bams_%j.out                 # File to which STDOUT will be written, including job ID
-#SBATCH -e sub_logs/pool_bams_%j.err                 # File to which STDERR will be written, including job ID
 
 while [[ "$#" -gt 0 ]]; do
 case $1 in

@@ -4,10 +4,10 @@
 \alias{get_result_dir}
 \title{Title}
 \usage{
-get_result_dir(pc)
+get_result_dir(psc)
 }
 \arguments{
-\item{pc}{}
+\item{psc}{}
 }
 \value{
 

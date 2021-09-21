@@ -4,10 +4,10 @@
 \alias{load_counts}
 \title{load_counts}
 \usage{
-load_counts(ps)
+load_counts(psc)
 }
 \arguments{
-\item{ps}{}
+\item{psc}{}
 }
 \value{
 

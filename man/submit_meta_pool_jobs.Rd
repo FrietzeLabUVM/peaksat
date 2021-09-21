@@ -5,11 +5,10 @@
 \title{Title}
 \usage{
 submit_meta_pool_jobs(
-  pc,
+  psc,
   bam_groups,
   bam_group_names = names(bams),
-  pool_script = get_pool_script(),
-  skip_peaksat = FALSE
+  pool_script = get_pool_script()
 )
 }
 \arguments{

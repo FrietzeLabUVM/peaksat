@@ -4,7 +4,7 @@
 \alias{make_meta_pool_cmd}
 \title{make_pool_cmd}
 \usage{
-make_meta_pool_cmd(pc, bams, name, pool_script = get_pool_script())
+make_meta_pool_cmd(psc, bams, name, pool_script = get_pool_script())
 }
 \arguments{
 \item{pool_script}{}

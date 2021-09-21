@@ -1,14 +1,13 @@
 #' load_counts
 #'
-#' @param ps
+#' @param psc
 #'
 #' @return
 #' @export
 #'
 #' @examples
-load_counts = function(ps){
-
- wds = dir(get_result_dir(ps), full.names = TRUE)
+load_counts = function(psc){
+ wds = dir(get_result_dir(psc), full.names = TRUE)
  wds = wds[basename(wds) != "sub_logs"]
  load_counts.wd(wds)
 }
