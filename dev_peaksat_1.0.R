@@ -1,15 +1,6 @@
-testthat::context("Basic")
-# flipping viewGranges
-
-library(testthat)
-
 library(peaksat)
 library(data.table)
 library(ggplot2)
-
-
-# bam_files = dir(system.file("extdata", package = "ssvQC"), pattern = "^M.+.bam$", full.names = TRUE)
-# psc = peaksat_config(job_scheduler = "bash", noModel = TRUE, out_dir = "~/peaksat_dev")
 
 #Key inputs are 2 parallel character vectors of bam files, 1 of ChIPs, 1 of inputs
 #Parallel means that the Input for item 1 of ChIPs is item 1 of Input, 2 with 2, 3 with 3, etc.
@@ -30,7 +21,6 @@ check_df
 psc = peaksat_config(job_scheduler = "SGE", out_dir = "~/peaksat_dev")
 
 # Run peaksat on provided bams
-
 ps1_jids = submit_peaksat_jobs(psc = psc,
                                treat_bams = by_input$chip,
                                ctrl_bams = by_input$input,
@@ -60,6 +50,7 @@ by_cell_input = unique(by_input$input)
 
 data.frame(chip = names(pooled_out), input = by_cell_input)
 
+# Run peaksat on pooled ChIPs
 ps3_jids = submit_peaksat_jobs(psc = psc,
                                treat_bams = names(pooled_out),
                                ctrl_bams = by_cell_input,
@@ -75,12 +66,4 @@ watch_jids(PS_OPTIONS$PS_JOB_IDS)
 
 cnt_dt = load_counts(psc)
 plot_peak_saturation_lines(cnt_dt)
-plot_peak_saturation_lines.facetted(cnt_dt) +
-  coord_cartesian(xlim = c(0, 50e6))
-
-lin_res = estimate_depth.linear(cnt_dt, target_peaks = 4.8e4)
-lin_res$estimates
-lin_res$plots
-log_res = estimate_depth.log(cnt_dt, target_peaks = 4.8e4)
-log_res$estimates
-cowplot::plot_grid(plotlist = log_res$plots)
+plot_peak_saturation_lines.facetted(cnt_dt)

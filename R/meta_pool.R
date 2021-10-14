@@ -13,7 +13,7 @@ make_meta_pool_cmd = function(psc,
                               bams,
                               name,
                               pool_script = get_pool_script()){
-  p_bam_dir = file.path(get_pool_dir(psc), "pooled_bams")
+  p_bam_dir = get_pool_dir(psc)
   log_dir = file.path(p_bam_dir, "sub_logs")
   dir.create(p_bam_dir, showWarnings = FALSE, recursive = TRUE)
   dir.create(log_dir, showWarnings = FALSE, recursive = TRUE)
@@ -40,16 +40,15 @@ get_meta_bam_file = function(psc, bam_group_name){
 #' Title
 #'
 #' @param psc
-#' @param bams
-#' @param name
+#' @param bam_groups
+#' @param bam_group_names
 #' @param pool_script
-#' @param skip_peaksat
 #'
 #' @return
 #' @export
 #'
 #' @examples
-submit_meta_pool_jobs = function(psc, bam_groups, bam_group_names = names(bams), pool_script = get_pool_script()){
+submit_meta_pool_jobs = function(psc, bam_groups, bam_group_names = names(bam_groups), pool_script = get_pool_script()){
   if(!is.list(bam_groups)){
     bam_groups = list(bam_groups)
   }

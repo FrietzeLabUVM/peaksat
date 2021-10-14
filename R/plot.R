@@ -40,6 +40,23 @@ load_counts.wd = function(wds){
 
     cnt_dt$sample = sub("peak_saturation.", "", basename(wd))
 
+    res_dir = basename(dirname(wds))
+    stat_suff = sub("results_", "", res_dir)
+
+    samp_names = sub("peak_saturation.", "", basename(wds))
+
+    clean_samp_names = sapply(seq_along(samp_names), function(i){
+      sub(paste0("_", stat_suff[i]), "", samp_names[i])
+    })
+
+    names(stat_suff) = samp_names
+    names(clean_samp_names) = samp_names
+
+    cnt_dt[, peak_stat := stat_suff[sample]]
+    cnt_dt[, sample := clean_samp_names[sample]]
+    cnt_dt[, c("stat_name", "stat_value") := tstrsplit(peak_stat, "_") ]
+    cnt_dt[, stat_value := as.numeric(stat_value)/1e3]
+
     cnt_dt[order(cnt_dt$read_count),]
   }
 

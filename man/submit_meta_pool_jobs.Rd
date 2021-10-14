@@ -7,12 +7,12 @@
 submit_meta_pool_jobs(
   psc,
   bam_groups,
-  bam_group_names = names(bams),
+  bam_group_names = names(bam_groups),
   pool_script = get_pool_script()
 )
 }
 \arguments{
-\item{skip_peaksat}{}
+\item{pool_script}{}
 }
 \value{
 

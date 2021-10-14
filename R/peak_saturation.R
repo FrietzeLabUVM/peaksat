@@ -117,7 +117,7 @@ submit_peaksat_jobs = function(psc,
     message(length(jids), " subset-callpeak jobs have been submitted to scheduler.\nWill await their completion before continuing.\nThis behavior can be controlled with 'await_completion = TRUE/FALSE'.\n'load_counts()' will not work properly until all jobs have finished.")
     watch_jids(jids)
   }else{
-    message(length(jids), " subset-callpeak jobs have been submitted to scheduler.\nUse watch_jids() to monitor.\n'load_counts()' will not work properly until all jobs have finished.")
+    message(length(jids), " subset-callpeak jobs have been submitted to scheduler.\nUse watch_jids(PS_OPTIONS$PS_JOB_IDS) to monitor.\n'load_counts()' will not work properly until all jobs have finished.")
   }
 
   invisible(jids)

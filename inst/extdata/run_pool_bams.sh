@@ -29,6 +29,7 @@ if [ -z $wd ]; then wd=$(pwd)/pooled_bams; fi
 mkdir -p $wd
 
 out_bam=$wd/${name}.bam
+echo out_bam is $out_bam
 
 log=$wd/${name}.log
 echo Start $(date) > $log

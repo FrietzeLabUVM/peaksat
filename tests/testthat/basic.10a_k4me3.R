@@ -16,10 +16,12 @@ library(ggplot2)
 #This script is meant to handle 1 mark at a time
 #You could obviously wrap this in a loop to handle several marks simultaneously.
 
-bam_files = dir(dir("/slipstream/galaxy/uploads/working/qc_framework/output_AF_MCF10_CTCF/", full.names = TRUE), pattern = "^M.+.bam$", full.names = TRUE)
+group_name = "MCF10A_H3K4ME3"
+bam_files = dir(dir("/slipstream/galaxy/uploads/working/qc_framework/output/", full.names = TRUE), pattern = "^MCF10.+((K4ME3)|(input)).+.bam$", full.names = TRUE)
+bam_files = bam_files[!grepl("input_R", bam_files)]
 by_input = split(bam_files, ifelse(grepl("input", bam_files), "input", "chip"))
-by_input$chip = by_input$chip[1:6]
-by_input$input = by_input$input[1:3]
+# by_input$chip = by_input$chip
+# by_input$input = by_input$input[1:3]
 by_input$input = rep(by_input$input, each = 2)
 
 #verify chip matches input
@@ -39,7 +41,7 @@ ps1_jids = submit_peaksat_jobs(psc = psc,
 # Merge all ChIPs into a single "meta" ChIP to get as many reads as possible.
 meta_out = submit_meta_pool_jobs(psc = psc,
                                  bam_groups = by_input$chip,
-                                 bam_group_names = c("combined_CTCF"))
+                                 bam_group_names = c(paste0("combined_", group_name)))
 
 # Run peaksat on meta ChIPs
 ps2_jids = submit_peaksat_jobs(psc = psc,
@@ -74,13 +76,14 @@ ps3_jids = submit_peaksat_jobs(psc = psc,
 watch_jids(PS_OPTIONS$PS_JOB_IDS)
 
 cnt_dt = load_counts(psc)
+cnt_dt = cnt_dt[grepl("H3K4ME3", sample)]
 plot_peak_saturation_lines(cnt_dt)
 plot_peak_saturation_lines.facetted(cnt_dt) +
   coord_cartesian(xlim = c(0, 50e6))
 
-lin_res = estimate_depth.linear(cnt_dt, target_peaks = 4.8e4)
+lin_res = estimate_depth.linear(cnt_dt, target_peaks = 18e3)
 lin_res$estimates
 lin_res$plots
-log_res = estimate_depth.log(cnt_dt, target_peaks = 4.8e4)
+log_res = estimate_depth.log(cnt_dt, target_peaks = 18e3)
 log_res$estimates
 cowplot::plot_grid(plotlist = log_res$plots)
