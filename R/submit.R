@@ -1,6 +1,7 @@
 
 get_str = function(psc){
-  paste0(psc@stat, "_", formatC(psc@stat_value*1e3, width = 3, format = "d", flag = "0"))
+  pow10 = max(3, -log10(psc@stat_value)+1)
+  paste0(psc@stat, "_", formatC(psc@stat_value*10^pow10, width = pow10, format = "d", flag = "0"))
 }
 
 make_stat_arg = function(psc, out_dir = getOption("PS_OUTDIR", getwd())){

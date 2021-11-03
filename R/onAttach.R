@@ -5,6 +5,7 @@
   #When adding new options here, also add them to the "names" setMethod below
   PS_OPTIONS <<- new("PS_OPTIONS")
   PS_STATS <<- valid_stats
+  PS_JOB_SCHEDULERS <<- valid_job_schedulers
 }
 
 setClass("PS_OPTIONS", representation = list(

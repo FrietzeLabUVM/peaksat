@@ -52,9 +52,9 @@ peaksat_config = function(stat = valid_stats$qValue,
                           submit_script = get_submit_script(),
                           job_scheduler = "SGE",
                           noModel = FALSE){
-
-  stopifnot(stat %in% valid_stats)
-  stopifnot(stat_value > .001)
+  if(!stat %in% valid_stats){
+    stop("stat was: ", stat, ". Must be one of: ", paste(valid_stats, collapse = ", "))
+  }
   stopifnot(job_scheduler %in% valid_job_schedulers)
   if(!dir.exists(out_dir))
     dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)

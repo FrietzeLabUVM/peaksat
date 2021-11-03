@@ -55,8 +55,7 @@ load_counts.wd = function(wds){
     cnt_dt[, peak_stat := stat_suff[sample]]
     cnt_dt[, sample := clean_samp_names[sample]]
     cnt_dt[, c("stat_name", "stat_value") := tstrsplit(peak_stat, "_") ]
-    cnt_dt[, stat_value := as.numeric(stat_value)/1e3]
-
+    cnt_dt[, stat_value := as.numeric(stat_value)/10^nchar(stat_value)]
     cnt_dt[order(cnt_dt$read_count),]
   }
 
