@@ -2,16 +2,16 @@
 % Please edit documentation in R/plot.R
 \name{load_counts.wd}
 \alias{load_counts.wd}
-\title{Title}
+\title{load_counts.wd}
 \usage{
 load_counts.wd(wds)
 }
 \arguments{
-\item{wds}{}
+\item{wds}{directories to load count data from.}
 }
 \value{
-
+data.table of peak count vs read count.
 }
 \description{
-Title
+load_counts.wd
 }

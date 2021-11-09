@@ -2,16 +2,18 @@
 % Please edit documentation in R/plot.R
 \name{plot_peak_saturation_lines.facetted}
 \alias{plot_peak_saturation_lines.facetted}
-\title{Title}
+\title{plot_peak_saturation_lines.facetted}
 \usage{
-plot_peak_saturation_lines.facetted(cnt_dt)
+plot_peak_saturation_lines.facetted(cnt_dt, color_by = NULL)
 }
 \arguments{
-\item{cnt_dt}{}
+\item{cnt_dt}{data.table returned by load_counts()}
+
+\item{color_by}{variable in cnt_dt to map to color.}
 }
 \value{
-
+ggplot of peak count vs read count. facetted by sample.
 }
 \description{
-Title
+plot_peak_saturation_lines.facetted
 }

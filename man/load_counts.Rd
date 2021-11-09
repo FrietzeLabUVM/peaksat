@@ -7,10 +7,10 @@
 load_counts(psc)
 }
 \arguments{
-\item{psc}{}
+\item{psc}{peaksat_config object}
 }
 \value{
-
+data.table of peak count vs read count.
 }
 \description{
 load_counts
