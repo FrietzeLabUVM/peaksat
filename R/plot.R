@@ -106,7 +106,8 @@ plot_peak_saturation_lines = function(cnt_dt, color_by = NULL){
       expand_limits(y = 0)
   }else{
     if(!color_by %in% colnames(cnt_dt)) stop(color_by, " not in colnames of cnt_dt.")
-    p_lines = ggplot(cnt_dt, aes_string(x = "read_count", y = "peak_count", group = "sample", color = color_by)) +
+    cnt_dt$group = paste(cnt_dt$out_dir, cnt_dt$sample, cnt_dt$peak_stat)
+    p_lines = ggplot(cnt_dt, aes_string(x = "read_count", y = "peak_count", group = "group", color = color_by)) +
       geom_path() +
       geom_point(data = lab_dt) +
       geom_text(data = lab_dt, aes(label = sample, x = read_count_lab), hjust = 0) +
@@ -152,7 +153,8 @@ plot_peak_saturation_lines.facetted = function(cnt_dt, color_by = NULL){
     p_lines2 = p
   }else{
     if(!color_by %in% colnames(cnt_dt)) stop(color_by, " not in colnames of cnt_dt.")
-    p = ggplot(cnt_dt, aes_string(x = "read_count", y = "peak_count", group = "sample", color = color_by)) +
+    cnt_dt$group = paste(cnt_dt$out_dir, cnt_dt$sample, cnt_dt$peak_stat)
+    p = ggplot(cnt_dt, aes_string(x = "read_count", y = "peak_count", group = "group", color = color_by)) +
       cowplot::theme_cowplot() + theme(strip.text = element_text(size = 8)) +
       scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
       scale_y_continuous(labels = function(x)x/1e3) +
