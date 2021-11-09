@@ -143,7 +143,7 @@ plot_peak_saturation_lines.facetted = function(cnt_dt, color_by = NULL){
       labs(x = "reads (M)", y = "peaks (k)")
     cnt_dtl = split(cnt_dt, cnt_dt$sample)
     for(dt in cnt_dtl){
-      p = p + annotate("path", x = dt$read_count, y = dt$peak_count, color = "gray80")
+      p = p + annotate("path", x = dt$read_count, y = dt$peak_count, color = "gray80", group = dt$group)
     }
 
     p = p +
@@ -161,7 +161,7 @@ plot_peak_saturation_lines.facetted = function(cnt_dt, color_by = NULL){
       labs(x = "reads (M)", y = "peaks (k)")
     cnt_dtl = split(cnt_dt, cnt_dt$sample)
     for(dt in cnt_dtl){
-      p = p + annotate("path", x = dt$read_count, y = dt$peak_count, color = "gray80")
+      p = p + annotate("path", x = dt$read_count, y = dt$peak_count, color = "gray80", group = dt$group)
     }
 
     p = p +
