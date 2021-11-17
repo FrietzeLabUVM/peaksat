@@ -17,11 +17,11 @@ peak_count_file = "/slipstream/home/joeboyd/R/peaksat_paper/peak_saturation/resu
   cn = c("name", "seed", "fraction", "stat", "cutoff", "PE", "input")
   if(file.exists(sub(".peak_count", ".peak_cutoff_counts", peak_count_file))){
     peak_cutoff_file = sub(".peak_count", ".peak_cutoff_counts", peak_count_file)
-    dt = data.table::fread(peak_cutoff_file, col.names = c("cutoff", "peak_count", cn))
+    dt = data.table::fread(peak_cutoff_file, col.names = c("signal_cutoff", "peak_count", cn))
   }else{
     dt = data.table::fread(peak_count_file, col.names = c("peak_count", cn))
-    dt$cutoff = 1
-    dt = dt[, c("cutoff", "peak_count", cn), with = FALSE]
+    dt$signal_cutoff = 1
+    dt = dt[, c("signal_cutoff", "peak_count", cn), with = FALSE]
   }
   dt
 }
@@ -35,19 +35,19 @@ peak_count_file = "/slipstream/home/joeboyd/R/peaksat_paper/peak_saturation/resu
 
   cn = c("name", "seed", "fraction", "stat", "cutoff", "PE", "input")
   rc_dt =  data.table::rbindlist(lapply(read_count_files, data.table::fread, col.names = c("read_count", cn)), idcol = "wd")
-  pc_dt =  data.table::rbindlist(lapply(peak_count_files, data.table::fread, col.names = c("peak_count", cn)), idcol = "wd")
+  pc_dt =  data.table::rbindlist(lapply(peak_count_files, .load_peak_counts), idcol = "wd")
 
-  cnt_dt = merge(rc_dt, pc_dt[, c("name", "peak_count")], by = "name")
+  cnt_dt = merge(rc_dt, pc_dt[, c("name", "peak_count", "signal_cutoff")], by = "name")
 
   data.table::set(cnt_dt, j = c("fraction", "rep"), value = data.table::tstrsplit(cnt_dt$name, "\\.", keep = 2:3))
   cnt_dt$fraction = as.numeric(cnt_dt$fraction)/100
 
   cnt_dt$sample = sub("peak_saturation.", "", basename(wd))
 
-  res_dir = basename(dirname(wds))
+  res_dir = basename(dirname(wd))
   stat_suff = sub("results_", "", res_dir)
 
-  samp_names = sub("peak_saturation.", "", basename(wds))
+  samp_names = sub("peak_saturation.", "", basename(wd))
 
   clean_samp_names = sapply(seq_along(samp_names), function(i){
     sub(paste0("_", stat_suff[i]), "", samp_names[i])
