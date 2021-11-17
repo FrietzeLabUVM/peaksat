@@ -5,10 +5,10 @@
 \title{Title}
 \usage{
 peaksat_config(
+  out_dir = getOption("PS_OUTDIR", file.path(getwd(), "peak_saturation")),
   stat = valid_stats$qValue,
   stat_value = 0.01,
   is_PE = FALSE,
-  out_dir = getOption("PS_OUTDIR", file.path(getwd(), "peak_saturation")),
   macs2_path = get_macs2_path(),
   samtools_path = get_samtools_path(),
   submit_script = get_submit_script(),

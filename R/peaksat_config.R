@@ -43,15 +43,18 @@ setClass("peaksat_config",
 #' @examples
 #' psc = peaksat_config()
 #' call_submit_script(psc, "treat.bam", "ctrl.bam")
-peaksat_config = function(stat = valid_stats$qValue,
-                          stat_value = .01,
-                          is_PE = FALSE,
-                          out_dir = getOption("PS_OUTDIR", file.path(getwd(), "peak_saturation")),
-                          macs2_path = get_macs2_path(),
-                          samtools_path = get_samtools_path(),
-                          submit_script = get_submit_script(),
-                          job_scheduler = "SGE",
-                          noModel = FALSE){
+peaksat_config = function(
+  out_dir = getOption("PS_OUTDIR", file.path(getwd(), "peak_saturation")),
+  stat = valid_stats$qValue,
+  stat_value = .01,
+  is_PE = FALSE,
+
+  macs2_path = get_macs2_path(),
+  samtools_path = get_samtools_path(),
+  submit_script = get_submit_script(),
+  job_scheduler = "SGE",
+  noModel = FALSE
+){
   if(!stat %in% valid_stats){
     stop("stat was: ", stat, ". Must be one of: ", paste(valid_stats, collapse = ", "))
   }
