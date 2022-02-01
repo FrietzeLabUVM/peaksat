@@ -21,10 +21,13 @@ load_counts = function(psc, min_signalValue = 1){
     ofile = file.path(odir, basename(peak_count_file))
     ofile
   })
+  peak_file = sub(".bam.peak_count", "_peaks.narrowPeak", peak_count_file)
   if(any(!file.exists(count_files))){
-    peak_file = sub(".bam.peak_count", "_peaks.narrowPeak", peak_count_file)
+    message("Loading peak file for counting: ", peak_file)
     if(!file.exists(peak_file)) stop("couldn't find peak file: ", peak_file)
     .peak_gr = seqsetvis::easyLoad_narrowPeak(peak_file)[[1]]
+  }else{
+    message("Using saved peak counts for: ", peak_file)
   }
   count_res = list()
   for(i in seq_along(min_signalValue)){
@@ -143,7 +146,14 @@ load_counts.wd = function(wds, min_signalValue = 1){
     warning("Not all results appear to be complete.")
   }
   if(!any(keep)) stop ("No valid results found.")
-  cnt_dt = data.table::rbindlist(lapply(wds[keep], .load_counts, min_signalValue = min_signalValue))
 
-  cnt_dt
+  if(.Platform$OS.type == "windows" || getOption("mc.cores", 1) == 1) {
+    cnt_dtl = pbapply::pblapply(wds[keep], .load_counts, min_signalValue = min_signalValue)
+
+  } else {
+    cnt_dtl = pbmcapply::pbmclapply(wds[keep], .load_counts, min_signalValue = min_signalValue)
+  }
+  cnt_dt = data.table::rbindlist(cnt_dtl)
+
+  cnt_dt[]
 }
