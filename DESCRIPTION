@@ -13,4 +13,4 @@ Depends:
     ggplot2,
     data.table
 Imports:
-RoxygenNote: 7.1.1
+RoxygenNote: 7.1.2

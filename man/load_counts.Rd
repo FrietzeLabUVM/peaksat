@@ -4,10 +4,12 @@
 \alias{load_counts}
 \title{load_counts}
 \usage{
-load_counts(psc)
+load_counts(psc, min_signalValue = 1)
 }
 \arguments{
 \item{psc}{peaksat_config object}
+
+\item{min_signalValue}{}
 }
 \value{
 data.table of peak count vs read count.
