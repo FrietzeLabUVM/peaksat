@@ -4,7 +4,11 @@
 \alias{.general_load_info.wd}
 \title{.general_load_info.wd}
 \usage{
-.general_load_info.wd(wds, min_signalValue = 1, type = c("count", "width")[1])
+.general_load_info.wd(
+  wds,
+  min_signalValue = 1,
+  type = c("count", "width", "novelty")[1]
+)
 }
 \arguments{
 \item{wds}{directories to load count data from.}

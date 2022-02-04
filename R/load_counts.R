@@ -24,7 +24,21 @@ load_widths = function(psc, min_signalValue = 1){
   .general_load_info(psc, min_signalValue = min_signalValue, type = "width")
 }
 
-.general_load_info = function(psc, min_signalValue = 1, type = c("count", "width")[1]){
+#' load_novelty
+#'
+#' @param psc peaksat_config object
+#' @param min_signalValue
+#'
+#' @return data.table of peak count vs read count.
+#' @export
+#'
+#' @examples
+load_novelty = function(psc, min_signalValue = 1){
+  .general_load_info(psc, min_signalValue = min_signalValue, type = "novelty")
+}
+
+
+.general_load_info = function(psc, min_signalValue = 1, type = c("count", "width", "novelty")[1]){
   wds = dir(get_result_dir(psc), full.names = TRUE)
   wds = wds[basename(wds) != "sub_logs"]
   .general_load_info.wd(wds, min_signalValue = min_signalValue, type = type)
@@ -37,7 +51,7 @@ load_widths = function(psc, min_signalValue = 1){
 #' @return data.table of peak count vs read count.
 #'
 #' @examples
-.general_load_info.wd = function(wds, min_signalValue = 1, type = c("count", "width")[1]){
+.general_load_info.wd = function(wds, min_signalValue = 1, type = c("count", "width", "novelty")[1]){
   wds = wds[basename(wds) != "sub_logs"]
   keep = sapply(wds, function(wd){
     read_count_files = dir(wd, pattern = "read_count$", full.names = TRUE)
@@ -62,6 +76,9 @@ load_widths = function(psc, min_signalValue = 1){
                     },
                     width = {
                       .load_peak_widths
+                    },
+                    novelty = {
+                      .load_peak_novelty
                     }, {
                       NULL
                     })
@@ -87,14 +104,14 @@ load_widths = function(psc, min_signalValue = 1){
   ofile
 }
 
-.get_ofile = function(np_file, min_sig, suffix = c("count", "width")[1]){
+.get_ofile = function(np_file, min_sig, suffix = c("count", "width", "novelty")[1]){
   odir = file.path(dirname(np_file), paste0("counts_signalValue_", min_sig))
   dir.create(odir, showWarnings = FALSE)
   ofile = file.path(odir, sub("_peaks.narrowPeak", paste0(".bam.peak_", suffix), basename(np_file)))
   ofile
 }
 
-.assemble_peak_info = function(wd, min_signalValue = 1, info_name = c("count", "width")[1], peak_FUN = .load_peak_counts){
+.assemble_peak_info = function(wd, min_signalValue = 1, info_name = c("count", "width", "novelty")[1], peak_FUN = .load_peak_counts){
   read_count_files = dir(wd, pattern = "read_count$", full.names = TRUE)
   np_files = dir(wd, pattern = "narrowPeak$", full.names = TRUE)
 
@@ -103,7 +120,50 @@ load_widths = function(psc, min_signalValue = 1){
 
   cn = c("name", "seed", "fraction", "stat", "cutoff", "PE", "input")
   rc_dt =  data.table::rbindlist(lapply(read_count_files, data.table::fread, col.names = c("read_count", cn)), idcol = "wd")
-  pc_dt =  data.table::rbindlist(lapply(np_files, peak_FUN, min_signalValue = min_signalValue), idcol = "wd")
+  if(info_name == "novelty"){
+    ofile = .get_ofile(np_files[1], min_sig = min_sig, suffix = "novelty")
+    if(file.exists(ofile)){
+      pc_dt = fread(ofile)
+    }else{
+      pc_grs = lapply(np_files, peak_FUN, min_signalValue = min_signalValue)
+
+      temp_files = sapply(np_files, .get_template)
+      tmp_dt = rbindlist(lapply(temp_files, fread, col.names = c("V1", cn)))
+      tmp_dt$V1 = NULL
+      out_dt = copy(tmp_dt)
+      out_dt$peak_novelty = -1
+
+      peak_groups = lapply(seq_along(pc_grs[[1]]), function(i){
+        lapply(pc_grs, function(x){
+          x[[i]]
+        })
+      })
+      names(peak_groups) = names(pc_grs[[1]])
+      for(nam in names(peak_groups)){
+        min_sig = as.numeric(nam)
+        grp = peak_groups[[nam]]
+        o = order(as.numeric(sapply(strsplit(names(grp), "\\."), function(x)x[2])))
+        grp = grp[o]
+
+        so_far = GRanges()
+        for(i in seq_along(grp)){
+          novel_peaks = subsetByOverlaps(grp[[i]], so_far, invert = TRUE)
+          n_peaks = length(novel_peaks)
+          message(n_peaks)
+          out_dt$peak_novelty[i] = n_peaks
+          so_far = reduce(c(so_far, grp[[i]]))
+        }
+        out_dt$signal_cutoff = min_sig
+        pc_dt = out_dt[, c("signal_cutoff", "peak_novelty", cn), with = FALSE]
+        fwrite(pc_dt, ofile, sep = " ")
+      }
+      pc_dt
+    }
+
+  }else{
+    pc_dt =  data.table::rbindlist(lapply(np_files, peak_FUN, min_signalValue = min_signalValue), idcol = "wd")
+  }
+
 
   cnt_dt = merge(rc_dt, pc_dt[, c("name", paste0("peak_", info_name), "signal_cutoff"), with = FALSE], by = "name")
 
@@ -134,7 +194,7 @@ load_widths = function(psc, min_signalValue = 1){
 
 
 #loads a vector of peak_count_files
-.load_peak_counts = function(np_file, min_signalValue = min_signalValue){
+.load_peak_counts = function(np_file, min_signalValue = 1){
   cn = c("name", "seed", "fraction", "stat", "cutoff", "PE", "input")
   count_files = sapply(min_signalValue, function(min_sig){
     .get_ofile(np_file, min_sig, "count")
@@ -171,7 +231,7 @@ load_widths = function(psc, min_signalValue = 1){
 }
 
 #loads a vector of peak_width_files
-.load_peak_widths = function(np_file, min_signalValue = min_signalValue){
+.load_peak_widths = function(np_file, min_signalValue = 1){
   cn = c("name", "seed", "fraction", "stat", "cutoff", "PE", "input")
   width_files = sapply(min_signalValue, function(min_sig){
     .get_ofile(np_file, min_sig, "width")
@@ -205,4 +265,16 @@ load_widths = function(psc, min_signalValue = 1){
   out_dt = rbindlist(width_res)
 
   out_dt[]
+}
+
+.load_peak_novelty = function(np_file, min_signalValue = 1){
+  message("Loading peak file for novelty calculation: ", np_file)
+  if(!file.exists(np_file)) stop("couldn't find peak file: ", np_file)
+  .peak_gr = seqsetvis::easyLoad_narrowPeak(np_file)[[1]]
+  peak_grs = list()
+  for(i in seq_along(min_signalValue)){
+    min_sig = min_signalValue[i]
+    peak_grs[[as.character(min_sig)]] = subset(.peak_gr, signalValue >= min_sig)
+  }
+  peak_grs
 }
