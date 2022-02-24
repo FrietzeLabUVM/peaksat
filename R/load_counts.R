@@ -7,8 +7,11 @@
 #' @export
 #'
 #' @examples
-load_counts = function(psc, min_signalValue = 1){
-  .general_load_info(psc, min_signalValue = min_signalValue, type = "count")
+load_counts = function(psc, min_signalValue = 1, selection = NULL){
+  .general_load_info(psc,
+                     min_signalValue = min_signalValue,
+                     type = "count",
+                     selection = selection)
 }
 
 #' load_widths
@@ -20,8 +23,11 @@ load_counts = function(psc, min_signalValue = 1){
 #' @export
 #'
 #' @examples
-load_widths = function(psc, min_signalValue = 1){
-  .general_load_info(psc, min_signalValue = min_signalValue, type = "width")
+load_widths = function(psc, min_signalValue = 1, selection = NULL){
+  .general_load_info(psc,
+                     min_signalValue = min_signalValue,
+                     type = "width",
+                     selection = selection)
 }
 
 #' load_novelty
@@ -33,14 +39,40 @@ load_widths = function(psc, min_signalValue = 1){
 #' @export
 #'
 #' @examples
-load_novelty = function(psc, min_signalValue = 1){
-  .general_load_info(psc, min_signalValue = min_signalValue, type = "novelty")
+load_novelty = function(psc, min_signalValue = 1, selection = NULL){
+  .general_load_info(psc,
+                     min_signalValue = min_signalValue,
+                     type = "novelty",
+                     selection = selection)
 }
 
+#' load_peaks
+#'
+#' @param psc peaksat_config object
+#' @param min_signalValue
+#'
+#' @return list of GRanges of peaks filtered by min_signalValue.
+#' @export
+#'
+#' @examples
+load_peaks = function(psc, min_signalValue = 1, selection = NULL){
+  .general_load_info(psc,
+                     min_signalValue = min_signalValue,
+                     type = "peaks",
+                     selection = selection)
+}
 
-.general_load_info = function(psc, min_signalValue = 1, type = c("count", "width", "novelty")[1]){
-  wds = dir(get_result_dir(psc), full.names = TRUE)
-  wds = wds[basename(wds) != "sub_logs"]
+.general_load_info = function(psc, min_signalValue = 1, type = c("count", "width", "novelty", "peaks")[1], selection = NULL){
+  if(is.null(selection)){
+    wds = dir(get_result_dir(psc), full.names = TRUE)
+    wds = wds[basename(wds) != "sub_logs"]
+  }else{
+    res_dir = get_result_dir(psc)
+    stat_str = sub("results_", "", basename(res_dir))
+    wds = file.path(res_dir, paste0("peak_saturation.", selection, "_", stat_str))
+    if(!all(dir.exists(wds))) stop("Invalid result directory in selection:\n", paste(wds[!all(dir.exists(wds))], collapse = "\n"))
+  }
+
   .general_load_info.wd(wds, min_signalValue = min_signalValue, type = type)
 }
 
@@ -51,7 +83,7 @@ load_novelty = function(psc, min_signalValue = 1){
 #' @return data.table of peak count vs read count.
 #'
 #' @examples
-.general_load_info.wd = function(wds, min_signalValue = 1, type = c("count", "width", "novelty")[1]){
+.general_load_info.wd = function(wds, min_signalValue = 1, type = c("count", "width", "novelty", "peaks")[1]){
   wds = wds[basename(wds) != "sub_logs"]
   keep = sapply(wds, function(wd){
     read_count_files = dir(wd, pattern = "read_count$", full.names = TRUE)
@@ -79,11 +111,33 @@ load_novelty = function(psc, min_signalValue = 1){
                     },
                     novelty = {
                       .load_peak_novelty
+                    },
+                    peaks = {
+                      .load_peak_peaks
                     }, {
                       NULL
                     })
   if(is.null(peak_FUN)){
     stop("Unrecognized type for peak_FUN: ", type)
+  }
+
+  if(type == "peaks"){
+    all_peaks = pbapply::pblapply(wds[keep], function(wd){
+      np_files = dir(wd, pattern = "narrowPeak$", full.names = TRUE)
+      names(np_files) = sub("_peaks.narrowPeak", "", basename(np_files))
+      seqsetvis::easyLoad_narrowPeak(np_files)
+    })
+    names(all_peaks) = sub(paste0("_", names(make_stat_arg(psc))), "", sub("^peak_saturation.", "", basename(wds[keep])))
+    #need to invert nested list, currently sample[sig_value], need sig_value[sample]
+    names(min_signalValue) = paste0("sigValue_", min_signalValue)
+    out_list = lapply(min_signalValue, function(min_sig){
+      lapply(all_peaks, function(sample_peaks){
+        lapply(sample_peaks, function(peak_gr){
+          subset(peak_gr, signalValue >= min_sig)
+        })
+      })
+    })
+    return(out_list)
   }
 
   if(.Platform$OS.type == "windows" || getOption("mc.cores", 1) == 1) {
@@ -92,6 +146,9 @@ load_novelty = function(psc, min_signalValue = 1){
   } else {
     cnt_dtl = pbmcapply::pbmclapply(wds[keep], .assemble_peak_info, min_signalValue = min_signalValue, info_name = type, peak_FUN = peak_FUN)
   }
+
+
+
   cnt_dt = data.table::rbindlist(cnt_dtl)
 
   cnt_dt[]
@@ -151,7 +208,9 @@ load_novelty = function(psc, min_signalValue = 1){
           n_peaks = length(novel_peaks)
           message(n_peaks)
           out_dt$peak_novelty[i] = n_peaks
-          so_far = reduce(c(so_far, grp[[i]]))
+          so_far = suppressWarnings({
+            reduce(c(so_far, grp[[i]]))
+          })
         }
         out_dt$signal_cutoff = min_sig
         pc_dt = out_dt[, c("signal_cutoff", "peak_novelty", cn), with = FALSE]
@@ -174,7 +233,6 @@ load_novelty = function(psc, min_signalValue = 1){
 
   res_dir = basename(dirname(wd))
   stat_suff = sub("results_", "", res_dir)
-
   samp_names = sub("peak_saturation.", "", basename(wd))
 
   clean_samp_names = sapply(seq_along(samp_names), function(i){
@@ -191,7 +249,18 @@ load_novelty = function(psc, min_signalValue = 1){
   cnt_dt[order(cnt_dt$read_count),]
 }
 
-
+#loads a vector of peak_count_files
+.load_peak_peaks = function(np_file, min_signalValue = 1){
+  message("Loading peak file: ", np_file)
+  if(!file.exists(np_file)) stop("couldn't find peak file: ", np_file)
+  .peak_gr = seqsetvis::easyLoad_narrowPeak(np_file)[[1]]
+  peak_grs = list()
+  for(i in seq_along(min_signalValue)){
+    min_sig = min_signalValue[i]
+    peak_grs[[i]] = subset(.peak_gr, signalValue >= min_sig)
+  }
+  peak_grs
+}
 
 #loads a vector of peak_count_files
 .load_peak_counts = function(np_file, min_signalValue = 1){
@@ -277,4 +346,20 @@ load_novelty = function(psc, min_signalValue = 1){
     peak_grs[[as.character(min_sig)]] = subset(.peak_gr, signalValue >= min_sig)
   }
   peak_grs
+}
+
+#' show_available_results
+#'
+#' @param psc
+#'
+#' @return
+#' @export
+#'
+#' @examples
+show_available_results = function(psc){
+  res = dir(get_result_dir(psc))
+  res = res[res != "sub_logs"]
+  res = sub("^peak_saturation.", "", res)
+  res = sub(sub("results", "", basename(get_result_dir(psc))), "", res)
+  res
 }

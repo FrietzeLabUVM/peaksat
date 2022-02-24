@@ -7,7 +7,7 @@
 .general_load_info.wd(
   wds,
   min_signalValue = 1,
-  type = c("count", "width", "novelty")[1]
+  type = c("count", "width", "novelty", "peaks")[1]
 )
 }
 \arguments{

@@ -4,7 +4,7 @@
 \alias{load_novelty}
 \title{load_novelty}
 \usage{
-load_novelty(psc, min_signalValue = 1)
+load_novelty(psc, min_signalValue = 1, selection = NULL)
 }
 \arguments{
 \item{psc}{peaksat_config object}

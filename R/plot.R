@@ -17,7 +17,7 @@ plot_peak_saturation_lines = function(cnt_dt, color_by = NULL){
     p_lines = ggplot(cnt_dt, aes(x = read_count, y = peak_count, group = group)) +
       geom_path() +
       geom_point(data = lab_dt) +
-      geom_text(data = lab_dt, aes(label = sample, x = read_count_lab), hjust = 0) +
+      geom_text(data = lab_dt, aes(label = sample, x = read_count_lab), hjust = 0, show.legend = FALSE) +
       scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
       scale_y_continuous(labels = function(x)x/1e3) +
       labs(x = "reads (M)", y = "peaks (k)") +
@@ -28,7 +28,7 @@ plot_peak_saturation_lines = function(cnt_dt, color_by = NULL){
     p_lines = ggplot(cnt_dt, aes_string(x = "read_count", y = "peak_count", group = "group", color = color_by)) +
       geom_path() +
       geom_point(data = lab_dt) +
-      geom_text(data = lab_dt, aes(label = sample, x = read_count_lab), hjust = 0) +
+      geom_text(data = lab_dt, aes(label = sample, x = read_count_lab), hjust = 0, show.legend = FALSE) +
       scale_x_continuous(expand = expansion(c(.1, .5)), labels = function(x)x/1e6) +
       scale_y_continuous(labels = function(x)x/1e3) +
       labs(x = "reads (M)", y = "peaks (k)") +
