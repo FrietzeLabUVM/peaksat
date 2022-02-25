@@ -31,8 +31,10 @@ make_submit_cmd = function(psc,
          psc@samtools_path,
          " -t ",
          treatment,
-         " -c ",
-         control,
+         ifelse(is.null(control),
+                "",
+                paste0(" -c ",
+                       control)),
          " -n ",
          paste(sep = "_", sub(".bam", "", basename(treatment)), names(stat_arg)),
          " ",
@@ -61,11 +63,13 @@ submit_peaksat_jobs = function(psc,
                                ctrl_bams,
                                hold_jid_map = NULL,
                                await_completion = TRUE){
-  if(length(ctrl_bams) != length(treat_bams)){
-    if(length(ctrl_bams) != 1){
-      stop("ctrl_bams must be same length as treat_bams or 1.")
-    }else{
-      ctrl_bams = rep(ctrl_bams, length(treat_bams))
+  if(!is.null(ctrl_bams)){
+    if(length(ctrl_bams) != length(treat_bams)){
+      if(length(ctrl_bams) != 1){
+        stop("ctrl_bams must be same length as treat_bams or 1.")
+      }else{
+        ctrl_bams = rep(ctrl_bams, length(treat_bams))
+      }
     }
   }
   if(any(!file.exists(treat_bams))){
@@ -77,18 +81,22 @@ submit_peaksat_jobs = function(psc,
     }
 
   }
-  if(any(!file.exists(ctrl_bams))){
-    if(is.null(hold_jid_map)){
-      stop("not all ctrl_bams exist!: ", paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
-    }else{
-      message("not all ctrl_bams exists, hopefully they will by time held jobs (hold_jid_map) finishes.")
-      message(paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
-    }
-
-  }
 
   treat_bams = suppressWarnings(normalizePath(treat_bams))
-  ctrl_bams = suppressWarnings(normalizePath(ctrl_bams))
+
+  if(!is.null(ctrl_bams)){
+    if(any(!file.exists(ctrl_bams))){
+      if(is.null(hold_jid_map)){
+        stop("not all ctrl_bams exist!: ", paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
+      }else{
+        message("not all ctrl_bams exists, hopefully they will by time held jobs (hold_jid_map) finishes.")
+        message(paste(ctrl_bams[!file.exists(ctrl_bams)], collapse = ", "))
+      }
+    }
+    ctrl_bams = suppressWarnings(normalizePath(ctrl_bams))
+  }
+
+
   if(!is.null(hold_jid_map)){
     names(hold_jid_map) = suppressWarnings(normalizePath(names(hold_jid_map)))
   }
