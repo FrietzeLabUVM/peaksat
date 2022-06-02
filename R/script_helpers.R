@@ -31,7 +31,7 @@ get_samtools_path = function(){
   getOption("PS_SAMTOOLS_PATH", system("which samtools", intern = TRUE))
 }
 
-#' Title
+#' get_result_dir
 #'
 #' @param psc
 #'
@@ -47,4 +47,16 @@ get_result_dir = function(psc){
 get_pool_dir = function(psc){
   str = get_str(psc)
   file.path(psc@out_dir, paste0("pooled_bams"))
+}
+
+get_submit_command = function(job_scheduler = valid_job_schedulers[1]){
+  if(job_scheduler == "SGE"){
+    "qsub -cwd"
+  }else if(job_scheduler == "SLURM"){
+    "sbatch"
+  }else if(job_scheduler == "bash"){
+    "bash"
+  }else{
+    stop("job_scheduler must be one of SGE, SLURM, or bash was ", job_scheduler)
+  }
 }

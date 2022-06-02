@@ -20,3 +20,11 @@ estimate_depth.linear(
 \description{
 Title
 }
+\examples{
+psc = peaksat_config("~/R/peaksat_paper/peaksat_outputs/peak_saturation_10A_H4ac_seq1_only")
+cnt_dt = load_counts(psc)
+est_res = estimate_depth.linear(cnt_dt[grepl("H4K8AC", sample)], target_peaks = 26e3, min_read_count = 10e6)
+est_res$plots
+est_res$estimates
+est_res$estimates[, .(sample, target_Mreads = saturation_read_count/1e6, current_Mreads = current_read_count/1e6, needed_Mreads = saturation_read_count/1e6-current_read_count/1e6)]
+}

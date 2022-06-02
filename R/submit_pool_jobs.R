@@ -9,7 +9,7 @@
 #' @export
 #'
 #' @examples
-make_meta_pool_cmd = function(psc,
+make_pool_cmd = function(psc,
                               bams,
                               name,
                               pool_script = get_pool_script()){
@@ -48,7 +48,7 @@ get_meta_bam_file = function(psc, bam_group_name){
 #' @export
 #'
 #' @examples
-submit_meta_pool_jobs = function(psc, bam_groups, bam_group_names = names(bam_groups), pool_script = get_pool_script()){
+submit_pool_jobs = function(psc, bam_groups, bam_group_names = names(bam_groups), pool_script = get_pool_script()){
   if(!is.list(bam_groups)){
     bam_groups = list(bam_groups)
   }
@@ -63,7 +63,7 @@ submit_meta_pool_jobs = function(psc, bam_groups, bam_group_names = names(bam_gr
   }
   cmds = sapply(names(bam_groups), function(nam){
     bams = bam_groups[[nam]]
-    make_meta_pool_cmd(psc = psc, bams = bams, name = paste0(nam, "_meta"))
+    make_pool_cmd(psc = psc, bams = bams, name = paste0(nam, "_meta"))
   })
   cmd_outs = lapply(cmds, system, intern = TRUE)
   if(psc@job_scheduler %in% c("SGE", "SLURM")){

@@ -10,18 +10,25 @@
 #' @export
 #'
 #' @examples
+#' psc = peaksat_config("~/R/peaksat_paper/peaksat_outputs/peak_saturation_10A_H4ac_seq1_only")
+#' cnt_dt = load_counts(psc)
+#' est_res = estimate_depth.linear(cnt_dt[grepl("H4K8AC", sample)], target_peaks = 26e3, min_read_count = 10e6)
+#' est_res$plots
+#' est_res$estimates
+#' est_res$estimates[, .(sample, target_Mreads = saturation_read_count/1e6, current_Mreads = current_read_count/1e6, needed_Mreads = saturation_read_count/1e6-current_read_count/1e6)]
 estimate_depth.linear = function(cnt_dt, target_peaks = NULL, min_read_count = 5e6, max_read_count = 100e6){
   if(is.null(target_peaks)){
     target_peaks = .9*max(cnt_dt$peak_count)
   }
   cnt_dt[, cutoff := target_peaks]
 
+  # saturation_dt = cnt_dt[peak_count >= cutoff, .(saturation = min(read_count), read_count, peak_count)]
+  # saturation_dt = saturation_dt[saturation == read_count]
+  # saturation_dt[, saturation := saturation / 1e6]
+  # saturation_dt[, slope := peak_count / read_count]
+  # saturation_dt[, read_count * slope]
 
-  saturation_dt = cnt_dt[peak_count >= cutoff, .(saturation = min(read_count), read_count, peak_count)]
-  saturation_dt = saturation_dt[saturation == read_count]
-  saturation_dt[, saturation := saturation / 1e6]
-  saturation_dt[, slope := peak_count / read_count]
-  saturation_dt[, read_count * slope]
+
 
   cnt_dt[, is_max := read_count == max(read_count), .(sample)]
   cnt_dt[, over_cutoff := peak_count > cutoff]
@@ -36,7 +43,7 @@ estimate_depth.linear = function(cnt_dt, target_peaks = NULL, min_read_count = 5
   max_dt = cnt_dt[is_max == TRUE | over_cutoff == TRUE]
   max_dt[, selected := read_count == min(read_count), .(sample) ]
   max_dt = max_dt[selected == TRUE]
-  max_dt$saturation_peak_count = saturation_dt$peak_count
+  max_dt$saturation_peak_count = target_peaks
   max_dt = merge(max_dt, min_dt[, .(zero_read_count = read_count, zero_peak_count = peak_count, sample)], by = c("sample"), all.x = TRUE)
   max_dt[is.na(zero_read_count), zero_read_count := 0]
   max_dt[is.na(zero_peak_count), zero_peak_count := 0]
@@ -45,7 +52,7 @@ estimate_depth.linear = function(cnt_dt, target_peaks = NULL, min_read_count = 5
   max_dt[, saturation_read_count := (saturation_peak_count - yint) / slope]
   # max_dt[, max_read_count := max_read_count]
   # max_dt[, max_peak_count := (max_read_count - yint) / slope]
-  est_dt = max_dt[, .(sample, saturation_peak_count, saturation_read_count, current_read_count = read_count, current_peak_count = peak_count, yint)][order(saturation_read_count)]
+  est_dt = max_dt[, .(sample, saturation_peak_count, saturation_read_count, current_read_count = read_count, current_peak_count = peak_count, yint, slope)][order(saturation_read_count)]
 
   p_estimate = ggplot(cnt_dt, aes(x = read_count, y = peak_count)) +
     geom_point(data = cnt_dt, alpha = 1) +

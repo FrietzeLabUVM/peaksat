@@ -1,15 +1,3 @@
-get_submit_command = function(job_scheduler = valid_job_schedulers[1]){
-  if(job_scheduler == "SGE"){
-    "qsub -cwd"
-  }else if(job_scheduler == "SLURM"){
-    "sbatch"
-  }else if(job_scheduler == "bash"){
-    "bash"
-  }else{
-    stop("job_scheduler must be one of SGE, SLURM, or bash was ", job_scheduler)
-  }
-}
-
 regBetween = function(x, reg_left, reg_capture, reg_right){
   reg_full = paste0("(?<=", reg_left, ")", reg_capture, "(?=", reg_right, ")")
   regmatches(x, regexpr(reg_full, x, perl = TRUE))
