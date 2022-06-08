@@ -23,12 +23,30 @@ get_run_script = function(){
   system.file(package = "peaksat", "extdata/run_subsample_peak.sh")
 }
 
+.check_path = function(cmd, opt){
+  no_file = "____NO_FILE____"
+  default_path = suppressWarnings(system(paste("which", cmd), intern = TRUE))
+  if(length(default_path) == 0) default_path = no_file
+  option_path = getOption(opt)
+  if(is.null(option_path)) option_path = no_file
+
+  if(option_path == no_file){
+    sel_path = default_path
+  }else{
+    sel_path = option_path
+  }
+  if(!file.exists(sel_path)){
+    stop("Could not locate macs2 via $PATH or R option ", opt, ".")
+  }
+  sel_path
+}
+
 get_macs2_path = function(){
-  getOption("PS_MACS2_PATH", system("which macs2", intern = TRUE))
+  .check_path("macs2", "PS_MACS2_PATH")
 }
 
 get_samtools_path = function(){
-  getOption("PS_SAMTOOLS_PATH", system("which samtools", intern = TRUE))
+  .check_path("samtools", "PS_SAMTOOLS_PATH")
 }
 
 #' get_result_dir
