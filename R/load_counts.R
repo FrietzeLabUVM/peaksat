@@ -148,8 +148,8 @@ load_peaks = function(psc, min_signalValue = 1, selection = NULL){
   }
 
 
-
-  cnt_dt = data.table::rbindlist(cnt_dtl)
+  is_valid = !sapply(cnt_dtl, is, class2 = "try-error")
+  cnt_dt = data.table::rbindlist(cnt_dtl[is_valid])
 
   cnt_dt[]
 }
