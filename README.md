@@ -1,6 +1,8 @@
 # peaksat
 R package to do peak saturation analysis for ChIP-seq (and other) data.
 
+Please see [this overview](https://frietzelabuvm.github.io/peaksat/) for installation and basic usage instructions.
+
 ## Setup Notes
 
 Depends on macs2 and samtools being installed and executable.
