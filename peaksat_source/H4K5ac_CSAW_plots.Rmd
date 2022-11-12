@@ -1,0 +1,284 @@
+---
+title: "H4K5ac CSAW Plots"
+author: "Cong Gao"
+date: '2022-11-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## H4K5ac CSAW Results Plots
+This is an R Markdown document to plot signal heatmaps for H4K5ac CSAW analysis results
+
+### Setup
+```{r}
+library(GenomicRanges)
+library(seqsetvis)
+library(data.table)
+library(seqsetvis)
+
+odir = "paper_figures.04272022"
+res_file = function(f){
+  file.path(odir, f)
+}
+wd = "/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac"  ## working directory
+```
+
+### Prepare CSAW results
+```{r}
+csaw_rds = dir(wd, pattern = "peaksat_CSAW.+Rds$", full.names = TRUE)
+names(csaw_rds) = sub(".Rds", "", sub("peaksat_CSAW_", "", basename(csaw_rds)))
+csaw_rmd = dir(wd, pattern = "CSAW.+Rmd$", full.names = TRUE)
+
+csaw_res = lapply(csaw_rds, readRDS)
+names(csaw_res)
+lengths(csaw_res)
+csaw_res = lapply(csaw_res, subset, FDR < .05)
+lengths(csaw_res)
+
+#### Filter CSAW 
+csaw_res = lapply(csaw_res, function(x){
+  x[x$FDR < .05 & width(x) > 50]
+})
+lengths(csaw_res)
+lapply(csaw_res, width)
+
+#### CSAW UpSet 
+p_up = ssvFeatureUpset(csaw_res)
+p_up
+```
+
+### Prepare to obtain GRange object
+```{r}
+#### Make query_gr from CSAW 
+olap_gr = ssvOverlapIntervalSets(csaw_res)
+view_size = 3e3
+query_gr = resize(olap_gr, view_size, fix = "center")
+query_gr = prepare_fetch_GRanges_names(query_gr)
+
+#### Configure bam files 
+qc_bams = dir("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/", pattern = "rep.+bam$", full.names = TRUE)
+query_dt = data.table(file = qc_bams)
+query_dt[, c("cell", "mark", "rep") := tstrsplit(basename(file), "[_\\.]", keep = 1:3)]
+query_dt$cell = factor(query_dt$cell, c("MCF10A", "MCF10AT1", "MCF10DCIS", "MCF10CA1a"))
+query_dt$mark = factor(query_dt$mark, c("H4K5ac", "H4K8ac", "input"))
+query_dt = query_dt[order(rep)][order(cell)][order(mark)]
+query_dt[, name := paste(cell, mark, rep)]
+query_dt[, name_split := paste(cell, mark, rep, sep = "\n")]
+query_dt$name = factor(query_dt$name, levels = unique(query_dt$name))
+query_dt$name_split = factor(query_dt$name_split, levels = unique(query_dt$name_split))
+query_dt[, mapped_reads := get_mapped_reads(file)] ## not useful for bw files
+```
+
+### Initial Fetch
+```{r}
+#### Fetch 1 
+parallel::detectCores()
+options(mc.cores = 28)
+prof_dt.r1 = ssvFetchBam(query_dt, query_gr, fragLens = 180, return_data.table = TRUE, n_region_splits = 20)
+if(is.null(prof_dt.r1$y_raw)) prof_dt.r1[, y_raw := y]
+prof_dt.r1[, y := y_raw / mapped_reads * 1e6]
+
+#### Cluster 1 
+set.seed(0)
+prof_dt.r1.clust = ssvSignalClustering(prof_dt.r1, max_rows = Inf, nclust = 10)
+prof_dt.r1.assign = unique(prof_dt.r1.clust[, .(id, cluster_id)])
+
+ssvSignalHeatmap.ClusterBars(prof_dt.r1.clust, fill_limits = c(0, 2), facet_ = "name_split")
+prof_dt.r1.clust.agg = prof_dt.r1.clust[, .(y = mean(y)), .(x, cell, mark, rep, name, name_split, cluster_id)]
+ggplot(prof_dt.r1.clust.agg, aes(x = x, y = y)) + 
+  geom_path() +
+  facet_grid(cluster_id~name)
+
+#### Find Bad Regions 
+max_per_mark = prof_dt.r1[abs(x)<150, .(y = max(y)), .(mark, id)]
+max_per_mark = dcast(max_per_mark, id~mark, value.var = "y")
+max_mat = as.matrix(max_per_mark[,-1])
+rownames(max_mat) = max_per_mark[[1]]
+max_mat.ratio = apply(max_mat[, colnames(max_mat) != "input"], 1, max) /  max_mat[, "input"]
+
+hist(max_mat.ratio[max_mat.ratio < 10], breaks = 60)
+bad_ids = names(max_mat.ratio)[max_mat.ratio < 1.3]
+
+ssvSignalHeatmap.ClusterBars(prof_dt.r1.clust[id %in% bad_ids], fill_limits = c(0, 2), facet_ = "name_split")
+
+#### Center Profiles
+query_gr.c = centerGRangesAtMax(prof_dt.r1[mark != "input"], query_gr, width = view_size)
+
+#### Remove Bad Regions 
+query_gr.c = query_gr.c[prof_dt.r1.assign[!id %in% bad_ids]$id]
+```
+
+
+### Modified Fetch 2
+```{r}
+#### Cleanup Fetch 1 
+remove("prof_dt.r1")
+remove("prof_dt.r1.clust")
+
+#### Fetch 2 
+prof_dt = ssvFetchBam(query_dt, query_gr.c, fragLens = 180, return_data.table = TRUE, n_region_splits = 20)
+if(is.null(prof_dt$y_raw)) prof_dt[, y_raw := y]
+prof_dt[, y := y_raw / mapped_reads * 1e6]
+
+set.seed(1)
+prof_dt.clust = ssvSignalClustering(prof_dt, max_rows = Inf, nclust = 5)
+prof_dt.assign = unique(prof_dt.clust[, .(id, cluster_id)])
+
+ssvSignalHeatmap.ClusterBars(prof_dt.clust[mark != "input"], fill_limits = c(0, 2), facet_ = "name_split")
+
+prof_dt.clust.agg = prof_dt.clust[, .(y = mean(y)), .(x, cell, mark, rep, name, name_split, cluster_id)]
+
+
+#### Plot Reps 
+ggplot(prof_dt.clust.agg[mark != "input"], aes(x = x, y = y, color = rep)) + 
+  geom_path() +
+  facet_grid(cluster_id~cell+mark, scales = "free_y")
+
+prof_dt.clust.pooled = prof_dt.clust[, .(y = mean(y)), .(x, cell, mark, id, cluster_id)]
+prof_dt.clust.pooled[, name := paste(cell, mark)]
+prof_dt.clust.pooled[, name_split := paste(cell, mark, sep = "\n")]
+
+### Manual clustering modification 
+prof_dt.clust.pooled = prof_dt.clust.pooled[cluster_id != 1]
+prof_dt.clust.pooled$cluster_id = droplevels(prof_dt.clust.pooled$cluster_id)
+levels(prof_dt.clust.pooled$cluster_id) = 1:4
+
+prof_dt.clust.pooled = reorder_clusters_manual(prof_dt.clust.pooled, manual_order = c(2, 1, 4, 3))
+prof_dt.clust.pooled[cluster_id %in% c(2, 3, 4), cluster_id := 2]
+prof_dt.clust.pooled$cluster_id = droplevels(prof_dt.clust.pooled$cluster_id)
+
+p_heat = ssvSignalHeatmap.ClusterBars(
+  prof_dt.clust.pooled[mark != "input"], fill_limits = c(0, 2), facet_ = "name_split", 
+  FUN_format_heatmap = function(p){
+    p + labs(x = "bp", fill = 'RPM', title = "Combined csaw results for H4K5ac and H4K8ac") + scale_x_continuous(breaks = c(-1000, 0, 1000))
+  })
+ggsave(plot = p_heat, res_file("csaw_combined_heatmap.pdf"), width = 8.2, height = 4.6)
+ggsave(plot = p_heat, res_file("csaw_combined_heatmap.png"), width = 8.2, height = 4.6)
+
+prof_dt.assign =  unique(prof_dt.clust.pooled[, .(id, cluster_id)])[order(id)]
+which(prof_dt.assign$id == 6668)
+query_gr.c["6668"]
+ggplot(prof_dt[id == "6668"], aes(x = x, y = y)) + 
+  geom_path() +
+  facet_wrap(~name)
+
+scc_dt = ssvFetchBam(query_dt, query_gr.c["6668"], win_size = 1, target_strand = "both", return_data.table = TRUE, fragLens = NA) 
+ggplot(scc_dt, aes(x = x, y = y, color = strand)) +
+  geom_path() +
+  facet_wrap(~name)
+
+fwrite(prof_dt.assign, res_file("csaw_combined_heatmap.assignment.csv"))
+query_gr.c$id = names(query_gr.c)
+dt_query_gr.c = as.data.table(query_gr.c)
+dt_query_gr.c = merge(dt_query_gr.c, prof_dt.assign, by = "id")
+fwrite(dt_query_gr.c[order(id)], res_file("csaw_combined_heatmap.regions.txt"), sep = "\t")
+
+ssvFeatureVenn(list(as.character(prof_dt.assign$id), names(query_gr.c)))
+
+#### Plot Marks 
+prof_dt.clust.agg.pooled = prof_dt.clust.pooled[, .(y = mean(y)), .(x, cell, mark, cluster_id)]
+p_line = ggplot(prof_dt.clust.agg.pooled[mark != "input"], aes(x = x, y = y, color = mark)) + 
+  geom_path(size = 1.3) +
+  facet_grid(cluster_id~cell, scales = "free_y") +
+  scale_color_brewer(palette = "Set1") +
+  labs(x = "bp", y = "mean RPM", title = "Combined csaw results for H4K5ac and H4K8ac", subtitle = "mean RPM per cluster") +
+  theme(panel.background = element_blank(), panel.grid = element_blank())
+ggsave(plot = p_line, res_file("csaw_combined_heatmap.lines.pdf"), width = 8.2, height = 4.6)
+ggsave(plot = p_line, res_file("csaw_combined_heatmap.lines.png"), width = 8.2, height = 4.6)
+
+
+ggplot(prof_dt.clust.agg.pooled[mark != "input"], aes(x = x, y = y, color = cell)) + 
+  geom_path() +
+  facet_grid(cluster_id~mark, scales = "free_y") +
+  scale_color_brewer(palette = "Dark2")
+
+```
+
+### More Modifications including signal Normalization
+```{r}
+#### Normalize Signal 
+library(magrittr)
+qc_np = "peaksat_outputs/peak_saturation_10A_H4ac_seq1_2_and_3.matched_inputs/results_qValue_010/" %>%
+  dir(pattern = "rep", full.names = TRUE) %>%
+  dir(pattern = "100.+narrowPeak$", full.names = TRUE)
+np_dt = data.table(peak_file = qc_np)
+np_dt[, c("cell", "mark", "rep") := tstrsplit(basename(dirname(peak_file)), "[_\\.]", keep = 3:5)]
+
+
+
+
+frac_skip = .05
+n_top = 1e3
+norm_dt = merge(query_dt, np_dt, by = c("cell", "mark", "rep"))
+i = 1
+cap_dt = rbindlist(
+  lapply(seq_len(nrow(norm_dt)), function(i){
+    message(i)
+    np_gr = easyLoad_narrowPeak(norm_dt$peak_file[i])[[1]]
+    np_gr = np_gr[order(np_gr$signalValue, decreasing = TRUE)]
+    #remove top 5%
+    np_gr = np_gr[seq(length(np_gr)*.05, length(np_gr))]
+    np_gr = np_gr[seq(min(n_top, length(np_gr)))]
+    max_dt = ssvFetchBam(norm_dt[i, .(file, name)], np_gr, win_method = "summary", summary_FUN = max, fragLens = 180, return_data.table = TRUE, n_region_splits = 100)
+    calc_norm_factors(max_dt, by2 = "name")
+  })
+)
+
+#### Look at All Peaks 
+np_grs = easyLoad_narrowPeak(qc_np)
+olap_gr = ssvConsensusIntervalSets(np_grs, min_fraction = 0, min_number = 2)
+query_gr.all_peaks = resize(sample(olap_gr, 5e2), width = 3e3, fix = "center")
+prof_dt.all = ssvFetchBam(query_dt, query_gr.all_peaks, fragLens = 180, return_data.table = TRUE, n_region_splits = 20)
+if(is.null(prof_dt.all$y_raw)) prof_dt.all[, y_raw := y]
+prof_dt.all[, y := y_raw / mapped_reads * 1e6]
+
+prof_dt.all.norm = append_ynorm(prof_dt.all[mark != "input"], by2 = "name", value_ = "y_raw")
+prof_dt.all.norm.clust = ssvSignalClustering(prof_dt.all.norm, fill_ = "y_norm", max_rows = Inf, nclust = 3)
+ssvSignalHeatmap.ClusterBars(prof_dt.all.norm, fill_ = "y_norm", fill_limits = c(0, 1), facet_ = "name_split")
+
+xy = merge(
+  unique(prof_dt.all.norm.clust[, .(y_cap_value, name)])[order(name)],
+  cap_dt[order(name)], by = "name")
+
+plot(xy$y_cap_value.x, xy$y_cap_value.y)
+
+prof_dt.all.norm.clust.agg = prof_dt.all.norm.clust[, .(y = mean(y), y_norm = mean(y_norm)), .(x, cell, mark, rep, name, name_split, cluster_id)]
+
+ggplot(prof_dt.all.norm.clust.agg[mark != "input"], aes(x = x, y = y_norm, color = mark, gorup = name)) + 
+  geom_path() +
+  facet_grid(cluster_id~cell+mark, scales = "free_y") +
+  scale_color_brewer(palette = "Set1")
+
+#### Apply Normalization 
+prof_dt.norm = append_ynorm(prof_dt, by2 = "name", value_ = "y_raw")
+prof_dt.norm[, y_relative := y_norm / max(y_norm), .(id)]
+prof_dt.norm.clust = ssvSignalClustering(prof_dt.norm, fill_ = "y_relative", max_rows = Inf, nclust = 3)
+prof_dt.norm.assign = unique(prof_dt.norm.clust[, .(id, cluster_id)])
+prof_dt.norm.clust = within_clust_sort(prof_dt.norm.clust, fill_ = "y_norm")
+
+ssvSignalHeatmap.ClusterBars(prof_dt.norm.clust, fill_ = "y_norm", fill_limits = c(0, 1), facet_ = "name_split")
+
+prof_dt.norm.clust.agg = prof_dt.norm.clust[, .(y = mean(y), y_norm = mean(y_norm)), .(x, cell, mark, rep, name, name_split, cluster_id)]
+
+#### Plot Reps 
+ggplot(prof_dt.norm.clust.agg[mark != "input"], aes(x = x, y = y_norm, color = rep)) + 
+  geom_path() +
+  facet_grid(cluster_id~cell+mark, scales = "free_y")
+
+#### Plot Marks 
+prof_dt.norm.clust.pooled = prof_dt.norm.clust[, .(y = mean(y), y_norm = mean(y_norm)), .(x, cell, mark, cluster_id)]
+ggplot(prof_dt.norm.clust.pooled[mark != "input"], aes(x = x, y = y_norm, color = mark)) + 
+  geom_path() +
+  facet_grid(cluster_id~cell, scales = "free_y") +
+  scale_color_brewer(palette = "Set1")
+
+ggplot(prof_dt.norm.clust.pooled[mark != "input"], aes(x = x, y = y_norm, color = cell)) + 
+  geom_path() +
+  facet_grid(cluster_id~mark, scales = "free_y") +
+  scale_color_brewer(palette = "Dark2")
+
+```
+

@@ -1,0 +1,395 @@
+---
+title: "H4K5ac Differential Binding"
+author: "Cong Gao"
+date: "11/04/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## H4K5ac case study
+
+This is an R Markdown document to show how to do CSAW analysis on H4K5ac target after we have good-quality data and perform H4K5ac as narrow-peak target. Please refer to CSAW book: [linked phrase](https://bioconductor.org/books/3.13/csawBook/)
+
+```{r setup}
+rm(list=ls())
+src_dir = "/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac"
+dir.create(src_dir, showWarnings = FALSE)
+res_file = function(f){
+  file.path(src_dir, f)
+}
+```
+
+### Load H4K5ac bam files
+```{r}
+H4K5ac_bam_files = dir(src_dir, pattern = "H4K5ac_rep.+bam$", full.names = TRUE) 
+H4K5ac_Bam_df <- data.frame(matrix(ncol = 3, nrow = 8), stringsAsFactors = FALSE)
+colnames(H4K5ac_Bam_df) <- c("Name","Description", "Path")
+H4K5ac_Bam_df$Path[1:8] <- H4K5ac_bam_files[1:8]
+H4K5ac_Bam_df$Name <- sub(".Aligned.sortedByCoord.out.bam", "", basename(H4K5ac_Bam_df$Path))
+H4K5ac_Bam_df$Description <- gsub("_", " ", H4K5ac_Bam_df$Name)
+H4K5ac_Bam_df
+```
+
+## Investigate the data quality of bam files (optional)
+```{r SAMtools}
+library(Rsamtools)
+diagnostics <- list()
+for (b in seq_along(H4K5ac_Bam_df$Path)) {
+  bam <- H4K5ac_Bam_df$Path[[b]]
+  total <- countBam(bam)$records
+  mapped <- countBam(bam, param=ScanBamParam(
+    flag=scanBamFlag(isUnmapped=FALSE)))$records
+  marked <- countBam(bam, param=ScanBamParam(
+    flag=scanBamFlag(isUnmapped=FALSE, isDuplicate=TRUE)))$records
+  diagnostics[[b]] <- c(Total=total, Mapped=mapped, Marked=marked)
+}
+
+diag.stats <- data.frame(do.call(rbind, diagnostics))
+rownames(diag.stats) <- H4K5ac_Bam_df$Name
+diag.stats$Prop.mapped <- diag.stats$Mapped/diag.stats$Total*100
+diag.stats$Prop.marked <- diag.stats$Marked/diag.stats$Mapped*100
+diag.stats
+
+H4K5ac_depth <- as.data.frame(diag.stats)
+save(H4K5ac_Bam_df, H4K5ac_depth, file="/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/H4K5ac_info.Rdata")
+```
+
+### CSAW counting reads into windows 
+
+```{r CSAW to call peaks}
+library(csaw)
+discard_list = read.table("/slipstream/home/conggao/ChIP_seq/BRCA_Epigenome/ENCODE_GRCh38_unified_blacklist.bed", stringsAsFactors = F, header = F)
+discard_gr <- GRanges(discard_list[,1], IRanges(discard_list[,2], discard_list[,3]))
+param <- readParam(minq=10, discard=discard_gr, restrict=paste0("chr", c(1:22, "X")))
+param
+### computing fragment length
+x <- correlateReads(H4K5ac_Bam_df$Path, param=reform(param, dedup=TRUE)) #x is the SCC objects, save x and param..
+frag.len <- maximizeCcf(x)
+frag.len
+plot(1:length(x)-1, x, xlab="Delay (bp)", ylab="CCF", type="l")
+abline(v=frag.len, col="red")
+text(x=frag.len, y=min(x), paste(frag.len, "bp"), pos=4, col="red")
+```
+
+
+### Pre-processing the counts
+```{r}
+H4K5ac_win.data <- windowCounts(H4K5ac_Bam_df$Path, param=param, width=50, ext=frag.len)  #save win.data and bins
+H4K5ac_win.data
+
+bins <- windowCounts(H4K5ac_Bam_df$Path, bin=TRUE, width=2000, param=param)
+filter.stat <- filterWindowsGlobal(H4K5ac_win.data, bins)
+min.fc <- 1.5
+keep <- filter.stat$filter > log2(min.fc)
+summary(keep)
+
+hist(filter.stat$filter, main="", breaks=50,
+    xlab="Background abundance (log2-CPM)")
+abline(v=log2(min.fc), col="red")
+
+H4K5ac_filtered.data <- H4K5ac_win.data[keep,]
+``` 
+
+```{r}
+win.ab <- scaledAverage(H4K5ac_filtered.data)
+adjc <- calculateCPM(H4K5ac_filtered.data, use.offsets=FALSE)
+
+logfc <- adjc[,4] - adjc[,1]
+smoothScatter(win.ab, logfc, ylim=c(-6, 6), xlim=c(0, 5),
+    xlab="Average abundance", ylab="Log-fold change")
+
+lfit <- smooth.spline(logfc~win.ab, df=5)
+o <- order(win.ab)
+lines(win.ab[o], fitted(lfit)[o], col="red", lty=2)
+
+H4K5ac_filtered.data <- normOffsets(H4K5ac_filtered.data)
+head(assay(H4K5ac_filtered.data, "offset"))
+
+norm.adjc <- calculateCPM(H4K5ac_filtered.data, use.offsets=TRUE)
+norm.fc <- norm.adjc[,4]-norm.adjc[,1]
+smoothScatter(win.ab, norm.fc, ylim=c(-6, 6), xlim=c(0, 5),
+    xlab="Average abundance", ylab="Log-fold change")
+
+lfit <- smooth.spline(norm.fc~win.ab, df=5)
+lines(win.ab[o], fitted(lfit)[o], col="red", lty=2)
+```
+
+
+### Statistical modelling
+```{r}
+celltype <- H4K5ac_Bam_df$Name
+celltype[grep("MCF10AT1_", celltype)] <- "MCF10AT1"
+celltype[grep("MCF10A_", celltype)] <- "MCF10A"
+celltype[grep("MCF10CA1a_", celltype)] <- "MCF10CA1a"
+celltype[grep("MCF10DCIS_", celltype)] <- "MCF10DCIS"
+
+celltype <- factor(celltype)
+design <- model.matrix(~0+celltype)
+colnames(design) <- levels(celltype)
+design
+```
+
+```{r}
+library(edgeR)
+y <- asDGEList(H4K5ac_filtered.data)
+str(y)
+
+y <- estimateDisp(y, design)
+summary(y$trended.dispersion)
+
+fit <- glmQLFit(y, design, robust=TRUE)
+summary(fit$df.prior)
+
+plotMDS(norm.adjc, labels=celltype,
+    col=c("red", "blue", "green", "grey")[as.integer(celltype)])
+```
+
+### Pairwise Comparison: MCF10AT1 vs. 10A
+```{r}
+AT1vs10A_contrast <- makeContrasts(MCF10AT1-MCF10A, levels=design)
+AT1vs10A_res <- glmQLFTest(fit, contrast=AT1vs10A_contrast)
+head(AT1vs10A_res$table)
+
+AT1vs10A_merged <- mergeResults(H4K5ac_filtered.data, AT1vs10A_res$table, tol=100, 
+    merge.args=list(max.width=5000))
+AT1vs10A_merged$regions
+
+AT1vs10A_tabcom <- AT1vs10A_merged$combined
+AT1vs10A_tabcom
+
+is.sig <- AT1vs10A_tabcom$FDR <= 0.05
+summary(is.sig)
+
+table(AT1vs10A_tabcom$direction[is.sig])
+
+AT1vs10A_tabbest <- AT1vs10A_merged$best
+AT1vs10A_tabbest
+
+is.sig.pos <- (AT1vs10A_tabbest$rep.logFC > 0)[is.sig]
+summary(is.sig.pos)
+
+out.ranges_AT1vs10A <- AT1vs10A_merged$regions
+mcols(out.ranges_AT1vs10A) <- DataFrame(AT1vs10A_tabcom,
+    best.pos=mid(ranges(rowRanges(H4K5ac_filtered.data[AT1vs10A_tabbest$rep.test]))),
+    best.logFC=AT1vs10A_tabbest$rep.logFC)
+
+#save
+```
+
+```{r}
+library(ggplot2)
+AT1vs10A_res.all = as.data.frame(mcols(out.ranges_AT1vs10A))
+ggplot(AT1vs10A_res.all, aes(x = rep.logFC, y = -log10(FDR), color = FDR <= 0.05)) +
+  geom_point(size = .3) +
+  scale_color_manual(values = c("FALSE" = "gray", "TRUE" = "red")) +
+  theme(panel.background = element_blank(), panel.grid = element_blank(), axis.line = element_line()) +
+  labs(title = "CSAW results for H4K5ac in MCF10AT1 vs MCF10A ")
+ggsave("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/H4K5ac_CSAW_AT1vs10A.pdf")
+saveRDS(out.ranges_AT1vs10A, file="/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/peaksat_CSAW_H4K5ac_AT1vs10A.Rds")
+```
+
+
+### MCF10DCIS vs. MCF10A
+```{r}
+DCISvs10A_contrast <- makeContrasts(MCF10DCIS-MCF10A, levels=design)
+DCISvs10A_res <- glmQLFTest(fit, contrast=DCISvs10A_contrast)
+head(DCISvs10A_res$table)
+
+DCISvs10A_merged <- mergeResults(H4K5ac_filtered.data, DCISvs10A_res$table, tol=100, 
+    merge.args=list(max.width=5000))
+DCISvs10A_merged$regions
+
+DCISvs10A_tabcom <- DCISvs10A_merged$combined
+DCISvs10A_tabcom
+
+DCISvs10A_is.sig <- DCISvs10A_tabcom$FDR <= 0.05
+summary(DCISvs10A_is.sig)
+
+table(DCISvs10A_tabcom$direction[DCISvs10A_is.sig])
+
+DCISvs10A_tabbest <- DCISvs10A_merged$best
+DCISvs10A_tabbest
+
+DCISvs10A_is.sig.pos <- (DCISvs10A_tabbest$rep.logFC > 0)[DCISvs10A_is.sig]
+summary(DCISvs10A_is.sig.pos)
+
+out.ranges_DCISvs10A <- DCISvs10A_merged$regions
+mcols(out.ranges_DCISvs10A) <- DataFrame(DCISvs10A_tabcom,                                   best.pos=mid(ranges(rowRanges(H4K5ac_filtered.data[DCISvs10A_tabbest$rep.test]))),
+                                         best.logFC=DCISvs10A_tabbest$rep.logFC)
+
+
+DCISvs10A_res.all = as.data.frame(mcols(out.ranges_DCISvs10A))
+ggplot(DCISvs10A_res.all, aes(x = rep.logFC, y = -log10(FDR), color = FDR <= 0.05)) +
+  geom_point(size = .3) +
+  scale_color_manual(values = c("FALSE" = "gray", "TRUE" = "red")) +
+  theme(panel.background = element_blank(), panel.grid = element_blank(), axis.line = element_line()) +
+  labs(title = "CSAW results for H4K5ac in MCF10DCIS vs MCF10A ")
+ggsave("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/H4K5ac_CSAW_DCISvs10A.pdf")
+saveRDS(out.ranges_DCISvs10A, file="/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/peaksat_CSAW_H4K5ac_DCISvs10A.Rds")
+```
+
+### MCF10DCIS vs. MCF10AT1 
+```{r}
+DCISvsAT1_contrast <- makeContrasts(MCF10DCIS-MCF10AT1, levels=design)
+DCISvsAT1_res <- glmQLFTest(fit, contrast=DCISvsAT1_contrast)
+head(DCISvsAT1_res$table)
+
+DCISvsAT1_merged <- mergeResults(H4K5ac_filtered.data, DCISvsAT1_res$table, tol=100, 
+    merge.args=list(max.width=5000))
+DCISvsAT1_merged$regions
+
+DCISvsAT1_tabcom <- DCISvsAT1_merged$combined
+DCISvsAT1_tabcom
+
+DCISvsAT1_is.sig <- DCISvsAT1_tabcom$FDR <= 0.05
+summary(DCISvsAT1_is.sig)
+
+table(DCISvsAT1_tabcom$direction[DCISvsAT1_is.sig])
+
+DCISvsAT1_tabbest <- DCISvsAT1_merged$best
+DCISvsAT1_tabbest
+
+DCISvsAT1_is.sig.pos <- (DCISvsAT1_tabbest$rep.logFC > 0)[DCISvsAT1_is.sig]
+summary(DCISvsAT1_is.sig.pos)
+
+out.ranges_DCISvsAT1 <- DCISvsAT1_merged$regions
+mcols(out.ranges_DCISvsAT1) <- DataFrame(DCISvsAT1_tabcom,
+    best.pos=mid(ranges(rowRanges(H4K5ac_filtered.data[DCISvsAT1_tabbest$rep.test]))),
+    best.logFC=DCISvsAT1_tabbest$rep.logFC)
+
+
+DCISvsAT1_res.all = as.data.frame(mcols(out.ranges_DCISvsAT1))
+ggplot(DCISvsAT1_res.all, aes(x = rep.logFC, y = -log10(FDR), color = FDR <= 0.05)) +
+  geom_point(size = .3) +
+  scale_color_manual(values = c("FALSE" = "gray", "TRUE" = "red")) +
+  theme(panel.background = element_blank(), panel.grid = element_blank(), axis.line = element_line()) +
+  labs(title = "CSAW results for H4K5ac in MCF10DCIS vs MCF10AT1 ")
+ggsave("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/H4K5ac_CSAW_DCISvsAT1_.pdf")
+saveRDS(out.ranges_DCISvsAT1, file="/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/peaksat_CSAW_H4K5ac_DCISvsAT1.Rds")
+```
+
+### MCF10CA1a vs. MCF10A
+```{r}
+CA1avs10A_contrast <- makeContrasts(MCF10CA1a-MCF10A, levels=design)
+CA1avs10A_res <- glmQLFTest(fit, contrast=CA1avs10A_contrast)
+head(CA1avs10A_res$table)
+
+CA1avs10A_merged <- mergeResults(H4K5ac_filtered.data, CA1avs10A_res$table, tol=100, 
+    merge.args=list(max.width=5000))
+CA1avs10A_merged$regions
+
+CA1avs10A_tabcom <- CA1avs10A_merged$combined
+CA1avs10A_tabcom
+
+CA1avs10A_is.sig <- CA1avs10A_tabcom$FDR <= 0.05
+summary(CA1avs10A_is.sig)
+
+table(CA1avs10A_tabcom$direction[CA1avs10A_is.sig])
+
+CA1avs10A_tabbest <- CA1avs10A_merged$best
+CA1avs10A_tabbest
+
+CA1avs10A_is.sig.pos <- (CA1avs10A_tabbest$rep.logFC > 0)[CA1avs10A_is.sig]
+summary(CA1avs10A_is.sig.pos)
+
+out.ranges_CA1avs10A <- CA1avs10A_merged$regions
+mcols(out.ranges_CA1avs10A) <- DataFrame(CA1avs10A_tabcom,
+    best.pos=mid(ranges(rowRanges(H4K5ac_filtered.data[CA1avs10A_tabbest$rep.test]))),
+    best.logFC=CA1avs10A_tabbest$rep.logFC)
+
+
+CA1avs10A_res.all = as.data.frame(mcols(out.ranges_CA1avs10A))
+ggplot(CA1avs10A_res.all, aes(x = rep.logFC, y = -log10(FDR), color = FDR <= 0.05)) +
+  geom_point(size = .3) +
+  scale_color_manual(values = c("FALSE" = "gray", "TRUE" = "red")) +
+  theme(panel.background = element_blank(), panel.grid = element_blank(), axis.line = element_line()) +
+  labs(title = "CSAW results for H4K5ac in MCF10CA1a vs MCF10A")
+ggsave("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/H4K5ac_CSAW_CA1avs10A_.pdf")
+saveRDS(out.ranges_DCISvsAT1, file="/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/peaksat_CSAW_H4K5ac_CA1avs10A.Rds")
+```
+
+```{r}
+CA1avs10AT1_contrast <- makeContrasts(MCF10CA1a-MCF10AT1, levels=design)
+CA1avs10AT1_res <- glmQLFTest(fit, contrast=CA1avs10AT1_contrast)
+head(CA1avs10AT1_res$table)
+
+CA1avs10AT1_merged <- mergeResults(H4K5ac_filtered.data, CA1avs10AT1_res$table, tol=100, 
+    merge.args=list(max.width=5000))
+CA1avs10AT1_merged$regions
+
+CA1avs10AT1_tabcom <- CA1avs10AT1_merged$combined
+CA1avs10AT1_tabcom
+
+CA1avs10AT1_is.sig <- CA1avs10AT1_tabcom$FDR <= 0.05
+summary(CA1avs10AT1_is.sig)
+
+table(CA1avs10AT1_tabcom$direction[CA1avs10AT1_is.sig])
+
+CA1avs10AT1_tabbest <- CA1avs10AT1_merged$best
+CA1avs10AT1_tabbest
+
+CA1avs10AT1_is.sig.pos <- (CA1avs10AT1_tabbest$rep.logFC > 0)[CA1avs10AT1_is.sig]
+summary(CA1avs10AT1_is.sig.pos)
+
+out.ranges_CA1avs10AT1 <- CA1avs10AT1_merged$regions
+mcols(out.ranges_CA1avs10AT1) <- DataFrame(CA1avs10AT1_tabcom,
+    best.pos=mid(ranges(rowRanges(H4K5ac_filtered.data[CA1avs10AT1_tabbest$rep.test]))),
+    best.logFC=CA1avs10AT1_tabbest$rep.logFC)
+
+
+CA1avs10AT1_res.all = as.data.frame(mcols(out.ranges_CA1avs10AT1))
+ggplot(CA1avs10AT1_res.all, aes(x = rep.logFC, y = -log10(FDR), color = FDR <= 0.05)) +
+  geom_point(size = .3) +
+  scale_color_manual(values = c("FALSE" = "gray", "TRUE" = "red")) +
+  theme(panel.background = element_blank(), panel.grid = element_blank(), axis.line = element_line()) +
+  labs(title = "CSAW results for H4K5ac in MCF10CA1a vs MCF10AT1")
+ggsave("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/H4K5ac_CSAW_CA1avs10AT1_.pdf")
+saveRDS(out.ranges_DCISvsAT1, file="/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/peaksat_CSAW_H4K5ac_CA1avs10AT1.Rds")
+```
+
+### MCF10CA1a vs. MCF10DCIS
+```{r}
+CA1avsDCIS_contrast <- makeContrasts(MCF10CA1a-MCF10DCIS, levels=design)
+CA1avsDCIS_res <- glmQLFTest(fit, contrast=CA1avsDCIS_contrast)
+head(CA1avs10AT1_res$table)
+
+CA1avsDCIS_merged <- mergeResults(H4K5ac_filtered.data, CA1avsDCIS_res$table, tol=100, 
+    merge.args=list(max.width=5000))
+CA1avsDCIS_merged$regions
+
+CA1avsDCIS_tabcom <- CA1avsDCIS_merged$combined
+CA1avsDCIS_tabcom
+
+CA1avsDCIS_is.sig <- CA1avsDCIS_tabcom$FDR <= 0.05
+summary(CA1avsDCIS_is.sig)
+
+table(CA1avsDCIS_tabcom$direction[CA1avsDCIS_is.sig])
+
+CA1avsDCIS_tabbest <- CA1avsDCIS_merged$best
+CA1avsDCIS_tabbest
+
+CA1avsDCIS_is.sig.pos <- (CA1avsDCIS_tabbest$rep.logFC > 0)[CA1avsDCIS_is.sig]
+summary(CA1avsDCIS_is.sig.pos)
+
+out.ranges_CA1avsDCIS <- CA1avsDCIS_merged$regions
+mcols(out.ranges_CA1avsDCIS) <- DataFrame(CA1avsDCIS_tabcom,
+    best.pos=mid(ranges(rowRanges(H4K5ac_filtered.data[CA1avsDCIS_tabbest$rep.test]))),
+    best.logFC=CA1avsDCIS_tabbest$rep.logFC)
+
+
+CA1avsDCIS_res.all = as.data.frame(mcols(out.ranges_CA1avsDCIS))
+ggplot(CA1avsDCIS_res.all, aes(x = rep.logFC, y = -log10(FDR), color = FDR <= 0.05)) +
+  geom_point(size = .3) +
+  scale_color_manual(values = c("FALSE" = "gray", "TRUE" = "red")) +
+  theme(panel.background = element_blank(), panel.grid = element_blank(), axis.line = element_line()) +
+  labs(title = "CSAW results for H4K5ac in MCF10CA1a vs MCF10DCIS")
+ggsave("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/H4K5ac_CSAW_CA1avsDCIS_.pdf")
+saveRDS(out.ranges_DCISvsAT1, file="/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/peaksat_CSAW_H4K5ac_CA1avsDCIS.Rds")
+```
+
+
+

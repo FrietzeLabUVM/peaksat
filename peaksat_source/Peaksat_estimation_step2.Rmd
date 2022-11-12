@@ -1,0 +1,42 @@
+---
+title: "Peaksat_step2.Rmd"
+author: "Cong Gao"
+date: '2022-11-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## *Peaksat* pipeline step 2: Peak saturation plot
+This code following step1 plot peak saturation curve and estimate required read depth, also use H4K5ac as an example.
+
+```{r load saved peaksat result}
+setwd("/slipstream/home/conggao/peak_saturation/MCF10_H4Kac_Nov2022/")
+cnt_dt = load_counts(pc)
+```
+
+### Derive attributes and  cleanup sample (used for labels in plots)
+```{r}
+cnt_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "[_\\.]", keep = 1:3)]
+cnt_dt[, sample := sub(".Aligned.sortedByCoord.out_qValue_010", "", sample)] #.Aligned.sortedByCoord.out
+cnt_dt[, sample := sub(".Aligned.sortedByCoord.out", "", sample)]
+cnt_dtl = split(cnt_dt, cnt_dt$mark)
+names(cnt_dtl)
+```
+
+### Plot peak saturation curve for H4K5ac 
+```{r}
+m = "H4K5ac"
+plot_peak_saturation_lines(cnt_dtl[[m]])
+plot_peak_saturation_lines.facetted(cnt_dtl[[m]])
+```
+
+### linear regression does a decent overal job of estimating required read depth.
+```{r}
+est_lin_res = estimate_depth.linear(cnt_dtl[[m]])
+est_lin_res$estimates; est_dt_H4K8ac <- as.data.table(est_lin_res$estimates)
+est_lin_res$plots; lm_plot_H4K8ac <- est_lin_res$plots
+```
+
