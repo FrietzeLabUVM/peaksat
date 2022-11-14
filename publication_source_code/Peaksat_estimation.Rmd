@@ -2,12 +2,13 @@
 title: "Peaksat Read Depth Estimation"
 author: "Cong Gao"
 date: "11/04/2022"
-output: html_document
+output:
+  BiocStyle::html_document:
+    toc_float: true
 vignette: >
     %\VignetteIndexEntry{Overview and Use Cases}
     %\VignetteEngine{knitr::rmarkdown}
     %\VignetteEncoding{UTF-8}
-    %\usepackage[UTF-8]{inputenc}
 ---
 
 ## Introduction
@@ -20,9 +21,9 @@ It requires an existing installation of macs2, which can be on your PATH or spec
 
 *peaksat* has primarily been tested using SGE (Sun Grid Engine) for job scheduling. It also has support for SLURM and even bash processing if neither job scheduler is available.
 
-## Objective
-
 This is an R markdown file to show how to run peaksat pipeline, we'll only focus on H4K5ac as an example.
+
+## Installation
 
 Before starting, we'll make sure peaksat is installed and loaded.
 
