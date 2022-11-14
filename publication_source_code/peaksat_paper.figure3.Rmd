@@ -1,0 +1,232 @@
+---
+title: "peaksat_figures"
+author: "joe boyd"
+date: "6/9/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+## Objective
+
+Demonstrate use of peaksat and generate figures for paper.
+
+Data being used comes from 2 phases of the H4ac ChIPseq. 
+Phase 1 is the initial sequencing run that we applied peaksat to estimate required read depth.  
+Phase 2 is the result of combining the initial and later sequencing runs.
+
+## Setup
+
+Load libraries and located files.
+
+```{r libs}
+library(peaksat)
+library(ggplot2)
+library(cowplot)
+library(data.table)
+library(magrittr)
+library(GenomicRanges)
+library(knitr)
+options(mc.cores = 20)
+```
+
+```{r files}
+
+
+```
+
+```{r outputs}
+out_dir = "paper_figures.08082022.fig3"
+
+input_use_pval = TRUE
+stat_value = .05
+input_mode = "matched"
+# input_mode = "merged"
+
+sub_dir = paste0("fig3_", 
+                 input_mode, "_", 
+                 ifelse(input_use_pval, "pValue_", "qValue_"),
+                 stat_value * 100)
+
+res_file = function(f){
+  final_dir = file.path(out_dir, sub_dir)
+  dir.create(final_dir, showWarnings = FALSE, recursive = TRUE)
+  file.path(final_dir, f)
+}
+```
+
+## Input saturation
+
+```{r in load, message=FALSE}
+#these paths are to outputs from running submit_peaksat_jobs
+# these scripts did the submitting
+# 
+# "run_peaksat.10a_H4ac_phase1_2_and_3.vs_input.R" to 
+# peaksat_outputs.input_saturation_metapool/peak_saturation_input_merged.*.complete_ChIP_input_saturation
+# 
+# "run_peaksat.10a_H4ac_phase1_2_and_3.vs_input.matched.R" to 
+# peaksat_outputs.input_saturation_matched
+
+switch(input_mode,
+       matched = {
+         input_results = dir("peaksat_outputs.input_saturation_matched", full.names = TRUE)
+         input_depths = sapply(strsplit(basename(input_results), "[\\._]"), function(x)x[6])
+         fig_height = 18
+         input_mode_title = "vs cell line matched inputs"
+       },
+       merged = {
+         input_results = dir("peaksat_outputs.input_saturation_metapool", pattern = "complete_ChIP", full.names = TRUE)
+         input_depths = sapply(strsplit(basename(input_results), "[\\._]"), function(x)x[5])
+         fig_height = 18
+         input_mode_title = "vs meta-pooled inputs"
+       },
+       stop("bad input_mode"))
+input_depths[input_depths == "bam"] = "96M"
+# input_results = dir("peaksat_outputs/", 
+#                     pattern = "peak_saturation_10A_H4ac_vs_MCF10A-AT1_input_merged", 
+#                     full.names = TRUE)
+
+names(input_results) = input_depths
+
+min_signalValue_todo = c(1, 2.5, 5)
+input_res = lapply(input_results, function(res_dir){
+  message(res_dir)
+  psc.in = peaksat_config(res_dir, stat = ifelse(input_use_pval, "pValue", "qValue"), stat_value = stat_value)
+  load_counts(psc.in, min_signalValue = min_signalValue_todo)
+})
+dt.in = rbindlist(input_res, idcol = "input_depth")
+dt.in[, c("cell", "mark", "rep") := tstrsplit(sample, "[_\\.]", keep = 1:3)]
+
+input_depth_lev = unique(dt.in$input_depth)
+o = order(as.numeric(sub("M", "", input_depth_lev)))
+input_depth_lev = input_depth_lev[o]
+# dt.in = dt.in[order(inpu)]
+dt.in$input_depth = factor(dt.in$input_depth, levels = input_depth_lev)
+
+dt.in = dt.in[order(read_count)]
+# dt.in[, read_depth := frank(read_count, ties.method = )*10, .(sample, input_depth, signal_cutoff)]
+dt.in$read_depth = paste0(round(dt.in$read_count/1e6), "M")
+dt.in$read_depth = factor(dt.in$read_depth, levels = unique(dt.in$read_depth))
+# dt.in$read_depth = factor(dt.in$read_depth)
+
+dt.in[, peak_str := round(peak_count/1e3, 1)]
+# dt.in = dt.in[cell != "10A-AT1-DCIS"]
+dt.in$cell %>% table
+```
+
+```{r input saturation plots cutoff 1, fig.width=9, fig.height=fig_height}
+txt_size = 2.6
+# color_threshold = quantile(dt.in[signal_cutoff==1]$peak_count, .7)
+sel_cell = unique(dt.in$cell)[1]
+
+dt.in$cell = factor(dt.in$cell, levels = c("MCF10A", "MCF10AT1", "MCF10CA1a", "MCF10DCIS"))
+dt.in = dt.in[order(cell)]
+
+todo = expand.grid(
+  rep = unique(dt.in$rep),
+  cell = unique(dt.in$cell)
+)
+sel_mark = "H4K5ac"
+dt.in[, facet_x := paste(mark, rep)]
+dt.in$facet_x = factor(dt.in$facet_x, levels = unique(dt.in$facet_x))
+
+for(sig_cutoff in min_signalValue_todo){
+  for(sel_mark in c("H4K5ac", "H4K8ac")){
+    plots_input_saturation_sig1 = lapply(seq_len(nrow(todo)), function(i){
+      plot_dt = dt.in[mark == sel_mark & cell == todo$cell[i] & rep == todo$rep[i] & signal_cutoff == sig_cutoff]
+      color_threshold = quantile(plot_dt$peak_count, .3)
+      ggplot(plot_dt, 
+             aes(x = read_depth, 
+                 y = input_depth, 
+                 fill = peak_count, 
+                 label = peak_str)) + 
+        scale_x_discrete(labels = function(x)sub("M", "", x)) +
+        scale_y_discrete(labels = function(x)sub("M", "", x)) +
+        # coord_fixed() +
+        geom_raster(show.legend = FALSE) + 
+        geom_text(aes(color = peak_count > color_threshold), show.legend = FALSE, size = txt_size) +
+        facet_grid(cell~facet_x, scales = "free") +
+        scale_fill_continuous(labels = function(x)x/1e3) +
+        scale_color_manual(values = c("FALSE" = "gray70", "TRUE" = "black")) +
+        theme(legend.position = "bottom", 
+              panel.background = element_blank(), 
+              panel.grid = element_blank(), 
+              legend.text = element_text(size = 8)) +
+        labs(
+          fill = "peak count (k)",
+          x = "ChIP read depth (M)",
+          y = "input read depth (M)")
+    })
+    pg_input_saturation_sig1 = cowplot::plot_grid(plotlist = plots_input_saturation_sig1, ncol = 2)
+    pg_input_saturation_sig1.w_title = cowplot::plot_grid(
+      ncol = 1, rel_heights = c(1, 22),
+      ggplot() + theme_void() + 
+        labs(title = paste(sep = "\n", "Input depth vs ChIP depth"), 
+             subtitle = paste(sep = "\n", 
+                              input_mode_title,
+                              paste("signalValue >", sig_cutoff), 
+                              paste(ifelse(input_use_pval, "pValue", "qValue"), "<", stat_value))),
+      pg_input_saturation_sig1
+    )
+    plot(pg_input_saturation_sig1.w_title)
+    
+    ggsave(res_file(paste0("fig3_", 
+                           sel_mark, "_inputs_signalValue_", 
+                           sig_cutoff, "_", 
+                           ifelse(input_use_pval, "pValue", "qValue"), ".heatmap.pdf")), 
+           pg_input_saturation_sig1.w_title,
+           # width = 9, height = 18)
+           width = 9, height = fig_height)
+  }
+}
+```
+
+
+
+```{r, fig.width=3.5, fig.height=8}
+table(dt.in$read_depth)
+dt.in_sel = dt.in[grepl("100.1", name)]
+dt.in_sel = dt.in_sel[order(input_depth)]
+dt.in_sel[, input_num := as.numeric(sub("M", "", input_depth))]
+dt.in_sel = dt.in_sel[input_num <= 70]
+# dt.in_sel[, input_num := 1e6*as.numeric(sub("M", "", input_depth))]
+# dt.in_sel = dt.in_sel[order(input_num)]
+for(sig_value in c(min_signalValue_todo)){
+  plots = lapply(levels(dt.in_sel$cell), function(sel_cell){
+    ggplot(dt.in_sel[signal_cutoff==sig_value & cell == sel_cell], 
+           aes(x = input_num, y = peak_count, group = sample, color = rep)) + 
+      geom_path() +
+      facet_grid(cell~mark, scales = "free_x") +
+      scale_color_manual(values = c(rep1 = "#da0000ff", rep2 = "#0000faff")) +
+      labs(x = "input read count (M)", y = "peak count (k)") +
+      # scale_x_continuous(labels = function(x)x/1e6) +
+      # scale_x_discrete(labels = function(x)sub("M", "", x)) +
+      scale_y_continuous(labels = function(x)x/1e3) +
+      # geom_vline(xintercept = 60e6, linetype = 2) +
+      cowplot::theme_cowplot() + 
+      theme(axis.text = element_text(size = 6))
+  })
+  pg_input_lines = cowplot::plot_grid(ncol = 1, rel_heights = c(1.5, 15),
+                                      ggplot() + theme_void() + 
+                                        labs(title = paste(sep = "\n", "Input depth vs ChIP depth"), 
+             subtitle = paste(sep = "\n", 
+                              input_mode_title,
+                              paste("signalValue >", sig_cutoff), 
+                              paste(ifelse(input_use_pval, "pValue", "qValue"), "<", stat_value))),
+                                      cowplot::plot_grid(
+                                        plotlist = plots, ncol = 1
+                                      )
+  )
+  plot(pg_input_lines)
+  ggsave(res_file(paste0("fig3_inputs_signalValue_", 
+                         sig_value, "_", 
+                         ifelse(input_use_pval, "pValue", "qValue"), ".lines.pdf")), 
+         pg_input_lines,
+         width = 3.5, height = 8)
+}
+```
+
+Input caps out at 50M in this analysis but I think I need to go up to 70M to show saturation.
+

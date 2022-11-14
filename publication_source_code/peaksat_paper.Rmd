@@ -1,0 +1,1206 @@
+---
+title: "peaksat_figures"
+author: "joe boyd"
+date: "6/9/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+## Objective
+
+Demonstrate use of peaksat and generate figures for paper.
+
+Data being used comes from 2 phases of the H4ac ChIPseq. 
+Phase 1 is the initial sequencing run that we applied peaksat to estimate required read depth.  
+Phase 2 is the result of combining the initial and later sequencing runs.
+
+## Setup
+
+Load libraries and located files.
+
+```{r libs}
+library(peaksat)
+library(ggplot2)
+library(cowplot)
+library(data.table)
+library(magrittr)
+library(GenomicRanges)
+library(knitr)
+options(mc.cores = 20)
+```
+
+```{r files}
+#these paths are to outputs from running submit_peaksat_jobs
+# these scripts did the submitting
+# "run_peaksat.10a_H4ac_phase1_and_2.pooled.R" 
+# "run_peaksat.10a_H4ac_phase1_and_2.R"        
+# "run_peaksat.10a_H4ac.phase1.pooled.R"       
+# "run_peaksat.10a_H4ac.phase1.R"
+
+#I've organized output dirs in list for ease of use later
+all_outputs = list(
+  seq1_only = "peaksat_outputs/peak_saturation_10A_H4ac_seq1_only.matched_inputs",
+  all_seq = "peaksat_outputs/peak_saturation_10A_H4ac_seq1_2_and_3.matched_inputs"
+)
+```
+
+```{r outputs}
+odir = "paper_figures.07262022.input_matched"
+dir.create(odir, showWarnings = FALSE)
+res_file = function(f){
+  file.path(odir, f)
+}
+```
+
+## Load Data
+
+Use our list of output locations we can easily load into a tidy data.table for plotting.
+
+This is a little messier just because we have 2 output locations to better organize the data.
+
+```{r load, message=FALSE}
+all_psc = lapply(all_outputs, function(out_dir){
+  peaksat_config(out_dir)
+})
+#these peaksat_config objects are used to run submit_peaksat_jobs and to load data
+class(all_psc$seq1_only)
+all_pc_dt = lapply(all_psc, load_counts, min_signalValue = seq(1, 7))
+pc_dt = rbindlist(all_pc_dt, idcol = "sequencing")
+pc_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "[_\\.]", keep = 1:3)]
+pc_dt$mark = toupper(pc_dt$mark)
+pc_dt[, sample := paste(cell, mark, rep, sep = "\n")]
+# pc_dt = pc_dt[cell != "MCF10CA1a"]
+```
+
+```{r load-show}
+head(pc_dt)
+```
+
+## Meta pool
+
+Start with built-in plotting functions.
+
+```{r plot 2a meta pool curve, fig.width=4, fig.height=2.5}
+labels.1st = "1st sequencing only"
+labels.1st_and_2nd = "1st and 2nd sequencing combined"
+theme_set(cowplot::theme_cowplot() + theme(axis.text = element_text(size = 7), axis.title = element_text(size = 8), title = element_text(size = 10), strip.text = element_text(size = 8)))
+
+fig1_dt = load_counts(peaksat_config("peaksat_outputs/peak_saturation_10A_H4ac_seq1_only/"), min_signalValue = 1)
+fig1_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "[_\\.]", keep = 1:3)]
+fig1_dt$mark = toupper(fig1_dt$mark)
+
+fig1_dt = fig1_dt[signal_cutoff == 1 & cell == "10A-AT1-DCIS"]
+fig1_dt[, is_max := peak_count == max(peak_count) , .(sample)]
+DT::datatable(fig1_dt[is_max == TRUE])
+ggplot(fig1_dt, aes(x = read_count, y = peak_count, group = sample)) + 
+  geom_path() + facet_wrap(~mark) +
+  labs(x = "read count (M)", y = "peak count (k)") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  labs(title = "Meta-pool Saturation Curves")
+
+fwrite(fig1_dt, res_file("fig2a_meta_pool_curve.csv"))
+ggsave(res_file("fig2a_meta_pool_curve.pdf"), width = 4, height = 2.5)
+```
+
+```{r width, fig.width = 4, fig.height=2.5}
+#this look at saturation by width suffers due to weak samples included, focus on strong DCIS
+all_w_dt = lapply(all_psc, load_widths, min_signalValue = c(1, 5)) %>% rbindlist(idcol = "sequencing")
+all_w_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "[_\\.]", keep = 1:3)]
+all_w_dt$mark = toupper(all_w_dt$mark)
+all_w_dt[, sample := paste(cell, mark, rep, sep = "\n")]
+all_w_dt = all_w_dt[cell != "MCF10CA1a"]
+
+min_sig_s1 = 5
+# fig1_dt.s1 = all_w_dt[signal_cutoff == 5 & cell == "10A-AT1-DCIS" & sequencing == "seq1_only"]
+fig1_dt.s1 = all_w_dt[signal_cutoff == min_sig_s1 & cell == "MCF10DCIS" & sequencing != "seq1_only"]
+ggplot(fig1_dt.s1, aes(x = read_count, y = peak_width, group = sample, color = rep)) + 
+  geom_path() + facet_wrap(~mark) +
+  labs(x = "read count (M)", y = "peak width (Mb)") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e6) +
+  labs(title = "Peak width Saturation Curves", subtitle = paste0("MCF10A-DCIS\n", min_sig_s1)) +
+  scale_color_manual(values = c(rep1 = "#da0000ff", rep2 = "#0000faff", `pooled` = "black"))
+ggsave(res_file("figS1_width_saturation_curve.pdf"), width = 4, height = 2.5)
+```
+
+## Target Depth Estimation Calculation
+
+```{r plot 2b estimate depth, fig.width=3, fig.height=6}
+anno_dt = fig1_dt
+cells_tp = setdiff(unique(pc_dt$cell), "10A-AT1-DCIS")
+anno_dt = lapply(cells_tp, function(x){
+  dt = copy(anno_dt)
+  dt$cell = x
+  dt
+}) %>% rbindlist
+max_dt = anno_dt[, .(max_peaks = max(peak_count)), .(mark)]
+max_dt
+min_sig_2 = 1
+sel_dt = pc_dt[signal_cutoff == min_sig_2 & cell != "10A-AT1-DCIS" & sequencing == "seq1_only" & rep != "pooled"]
+sel_dt2 = pc_dt[signal_cutoff == min_sig_2 & cell != "10A-AT1-DCIS" & sequencing != "seq1_only" & rep != "pooled"]
+
+est_res.k5 = estimate_depth.linear(sel_dt[mark == "H4K5AC"], 
+                                   target_peaks = max_dt[mark == "H4K5AC"]$max_peaks, 
+                                   max_read_count = Inf, 
+                                   min_read_count = 7e6)
+est_res.k5$estimates
+est_res.k5$plots + facet_wrap(~sample, ncol = 2)# +
+ggsave(res_file("fig2b_h4k5ac_estimate.pdf"), width = 3, height = 6)
+
+# coord_cartesian(xlim = c(0, 20e6), ylim = c(0, 15e3))
+
+est_res.k8 = estimate_depth.linear(sel_dt[mark == "H4K8AC"], 
+                                   target_peaks = max_dt[mark == "H4K8AC"]$max_peaks, 
+                                   max_read_count = Inf, 
+                                   min_read_count = 7e6)
+est_res.k8$estimates
+est_res.k8$plots + facet_wrap(~sample, ncol = 2) #+
+# coord_cartesian(xlim = c(0, 20e6), ylim = c(0, 10e3))
+
+save(pc_dt, sel_dt, est_res.k5, est_res.k8, max_dt, file = res_file("linear_regression_data.save"))
+
+ggsave(res_file("fig2c_h4k8ac_estimate.pdf"), width = 3, height = 6)
+```
+
+```{r plot 2b estimate depth v2, fig.width=4.5, fig.height=6.2}
+est_dt = rbind(
+  est_res.k5$estimates,
+  est_res.k8$estimates
+)
+est_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "\n")]
+est_dt[, rep_round := paste(rep, "initial")]
+
+sel_dt[, rep_round := paste(rep, "initial")]
+sel_dt2[, rep_round := paste(rep, "combined")]
+
+# ggplot(sel_dt, 
+#        aes(x = read_count, y = peak_count, group = sample, color = rep_round)) + 
+#   geom_path(data = anno_dt, color = "gray70") +
+#   geom_path(size = 1.3) + 
+#   geom_segment(data = est_dt, aes(x = current_read_count, xend = saturation_read_count, y = current_peak_count, yend = saturation_peak_count), linetype = 3) +
+#   geom_hline(aes(yintercept = max_peaks), data = max_dt, linetype = 2, color = "#7b7979ff") +
+#   facet_grid(cell~mark) +
+#   labs(x = "read count (M)", y = "peak count (k)") +
+#   scale_x_continuous(labels = function(x)x/1e6) +
+#   scale_y_continuous(labels = function(x)x/1e3) +
+#   # annotate("path", x= anno_dt$read_count, y = anno_dt$peak_count, mark = anno_dt$mark) +
+#   labs(title = "Target Depth Estimation", caption = "TODO add observed and extraplotated legend") +
+#   scale_color_manual(values = c(`rep1 initial` = "#da0000ff", 
+#                                 `rep2 initial` = "#0000faff",
+#                                 `meta-pool` = "gray70"))
+
+p_estimate = ggplot(sel_dt, 
+                    aes(x = read_count, y = peak_count, group = sample, color = rep_round)) + 
+  geom_path(data = anno_dt, color = "gray70") +
+  geom_path(data = sel_dt2, size = 1, alpha = .7) +
+  geom_path(size = 1.3) + 
+  geom_segment(data = est_dt, aes(x = current_read_count, xend = saturation_read_count, y = current_peak_count, yend = saturation_peak_count), linetype = 3) +
+  geom_hline(aes(yintercept = max_peaks), data = max_dt, linetype = 2, color = "#7b7979ff") +
+  facet_grid(cell~mark) +
+  labs(x = "read count (M)", y = "peak count (k)", color = "sequencing\ntype") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  # annotate("path", x= anno_dt$read_count, y = anno_dt$peak_count, mark = anno_dt$mark) +
+  labs(title = "Target Depth Estimation", caption = "TODO add observed and extraplotated legend") +
+  scale_color_manual(values = c(`rep1 initial` = "#da0000ff", 
+                                `rep1 combined` = "#da8888ff", 
+                                `rep2 initial` = "#0000faff",
+                                `rep2 combined` = "#8888faff", 
+                                `meta-pool` = "gray70"))
+
+
+
+p_estimate + coord_cartesian(xlim = c(0, 100e6))
+ggsave(res_file("fig2bc_combo_estimate.pdf"), width = 4.5, height = 6.2)
+
+p_estimate + coord_cartesian(xlim = c(5e6, 30e6), y = c(0, 1.5e4))
+ggsave(res_file("fig2bc_combo_estimate.zoom.pdf"), width = 4.5, height = 6.2)
+```
+
+```{r plot 2b estimate depth table, fig.width=4.5, fig.height=5}
+est_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "\n")]
+est_dt = est_dt[order(rep)][order(cell)][order(mark)]
+tab_dt = est_dt[, .(sample = gsub("\n", " ", sample), current_read_count, saturation_read_count, needed_read_count = saturation_read_count - current_read_count)]
+fwrite(tab_dt, res_file("fig2_table.csv"))
+setnames(tab_dt, c("Name", "Current", "Target", "Needed"))
+for(cn in colnames(tab_dt)[-1]){
+  tab_dt[[cn]] = round(tab_dt[[cn]]/1e6)
+}
+kable(tab_dt, caption = "Target depth estimation results (millions of reads)")
+```
+```{r, fig.width=5, fig.height=7}
+est_tab_dt = melt(tab_dt)
+est_tab_dt[, rel_value := value / max(value), .(variable)]
+est_tab_dt$Name = factor(est_tab_dt$Name, levels = rev(unique(est_tab_dt$Name)))
+
+est_cols = RColorBrewer::brewer.pal(8, "Reds")[-1:-3]
+
+ymax = 16
+
+ggplot(est_tab_dt, aes(x = variable, y = Name, label = value, color = rel_value)) +
+  geom_text() +
+  scale_x_discrete(position = "top") +
+  scale_color_gradientn(colours = c("black", "red"), breaks = c(0, .5, 1), limits = c(0, 1)) +
+  geom_hline(yintercept = seq(0, ymax)+.5) +
+  geom_vline(xintercept = seq(0, 4)+.5) + 
+  theme(axis.ticks = element_blank(), 
+        axis.line = element_blank(), 
+        axis.text = element_text(size = 10), 
+        legend.position = "right",
+        legend.justification = 0,
+        legend.key.width = unit(.2, 'in'), 
+        plot.title.position = "plot") +
+  coord_cartesian(xlim = c(.5, 3.5), ylim = c(.5, ymax + .5), expand = FALSE) +
+  labs(x = "", y = "", title = "Estimated Target and Needed Read Counts", subtitle = "Millions of Reads", color = "relative value\nto column max") 
+
+
+ggsave(res_file("fig2_table.pdf"), width = 5, height = 7)
+```
+
+## Target Depth Estimate Evaluation
+
+```{r, fig.width=9, fig.height=9}
+est_dt
+peak_max = max_dt$max_peaks
+names(peak_max) = max_dt$mark
+first_guesses = round(est_dt$saturation_read_count/1e6, 1)
+names(first_guesses) = gsub("\n", " ", est_dt$sample)
+
+plot_dt = pc_dt[signal_cutoff == 1]
+plot_dt = plot_dt[order(sequencing == "seq1_only")]
+
+cells_toplot = c("MCF10A", "MCF10AT1", "MCF10CA1a", "MCF10DCIS")
+
+all_plots = list()
+for(m in c("H4K5AC", "H4K8AC")){
+  for(cl in cells_toplot){
+    # for(cl in c("MCF10A", "MCF10AT1", "MCF10DCIS")){
+    for(r in c("rep1", "rep2")){
+      
+      name = paste(cl, m, r)
+      guess = first_guesses[name]
+      message(guess)
+      p = ggplot(plot_dt[cell == cl & mark == m & rep == r], 
+                 aes(x = read_count, y = peak_count, 
+                     color = sequencing, 
+                     group = sequencing, 
+                     size = sequencing)) +
+        geom_path(show.legend = FALSE) +
+        geom_vline(xintercept = guess*1e6) +
+        geom_hline(yintercept = peak_max[m]) +
+        labs(title = name) +
+        scale_size_manual(values = c("seq1_only" = 1.5, "all_seq" = 2.5)) +
+        scale_color_manual(values = c("seq1_only" = "black", "all_seq" = "cornflowerblue")) +
+        labs(x = "read count (M)", y = "peak count (k)") +
+        scale_x_continuous(labels = function(x)x/1e6) +
+        scale_y_continuous(labels = function(x)x/1e3) +
+        cowplot::theme_cowplot() +
+        theme(title = element_text(size = 8))
+      
+      all_plots[[name]] = p
+    }
+  }
+}
+
+
+pg_left = cowplot::plot_grid(plotlist = all_plots[seq(length(cells_toplot)*2)], ncol = 2)
+pg_right = cowplot::plot_grid(plotlist = all_plots[seq(length(cells_toplot)*2) + 2*length(cells_toplot)], ncol = 2)
+pg_top = ggplot() + theme_void() + labs(title = "Evaluation of Depth Estimate") + theme(title = element_text(hjust = .5, vjust = .5))
+
+cowplot::plot_grid(ncol = 1, rel_heights = c(1, 14),
+                   pg_top, 
+                   cowplot::plot_grid(ncol = 2, pg_left, pg_right))
+ggsave("fig2_depth_estimate.old.pdf", width = 9, height = 9)
+```
+
+The short black line is the round 1 sequencing results only.  Light-blue line is round 1 and 2 combined.  The black reference line indicate 20k peaks and the estimated read depth required to get to 20k peaks.
+
+H4K5ac worked really well, something is up with H4K8ac. I'll look into it.
+
+
+## Signal value cutoff
+
+```{r signal value cutoff, fig.width=4.7, fig.height=6.7}
+sig_dt = pc_dt[sequencing == "all_seq" & rep == "pooled" & cell != "10A-AT1-DCIS" & signal_cutoff > 1]
+ggplot(sig_dt, aes(x = read_count, y = peak_count, color = factor(signal_cutoff))) +
+  geom_path() +
+  facet_wrap(cell~mark, ncol = 2, scales = "free") +
+  labs(x = "read count (M)", y = "peak count (k)", color = "minimum signalValue") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  # scale_color_brewer(palette = "Reds", direction = -1) +
+  scale_color_manual(values = rev(seqsetvis::safeBrew(8, "reds"))[1:6])
+ggsave(res_file("fig3_signal_cutoff.pdf"), width=4.7, height=6.7)
+```
+
+```{r, fig.width=4.7, fig.height=6.1}
+all_w_dt = lapply(all_psc, load_widths, min_signalValue = seq(1, 7))
+w_dt = rbindlist(all_w_dt, idcol = "sequencing")
+w_dt[, c("cell", "mark", "rep") := tstrsplit(sample, "[_\\.]", keep = 1:3)]
+w_dt$mark = toupper(w_dt$mark)
+w_dt[, sample := paste(cell, mark, rep, sep = "\n")]
+# w_dt = w_dt[cell != "MCF10CA1a"]
+
+sig_dt2 = w_dt[sequencing == "all_seq" & rep == "pooled" & cell != "10A-AT1-DCIS" & signal_cutoff > 1]
+ggplot(sig_dt2, aes(x = read_count, y = peak_width, color = factor(signal_cutoff))) +
+  geom_path() +
+  facet_wrap(cell~mark, ncol = 2, scales = "free") +
+  labs(x = "read count (M)", y = "peak count (k)", color = "minimum signalValue") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  scale_color_manual(values = rev(seqsetvis::safeBrew(8, "reds"))[1:6])
+ggsave(res_file("fig3_signal_cutoff.width.pdf"), width=4.7, height=6.1)
+```
+
+## Input saturation
+
+```{r in load, message=FALSE}
+input_use_pval = FALSE
+input_mode = "matched"
+switch(input_mode,
+       matched = {
+         input_results = dir("peaksat_outputs.input_saturation_matched", full.names = TRUE)
+         input_depths = sapply(strsplit(basename(input_results), "[\\._]"), function(x)x[6])
+         fig_height = 18
+       },
+       merged = {
+         input_results = dir("peaksat_outputs.input_saturation_metapool", pattern = "50M_ChIP", full.names = TRUE)
+         input_depths = sapply(strsplit(basename(input_results), "[\\._]"), function(x)x[5])
+         fig_height = 10
+       },
+       stop("bad input_mode"))
+input_depths[input_depths == "bam"] = "96M"
+# input_results = dir("peaksat_outputs/", 
+#                     pattern = "peak_saturation_10A_H4ac_vs_MCF10A-AT1_input_merged", 
+#                     full.names = TRUE)
+
+names(input_results) = input_depths
+input_res = lapply(input_results, function(res_dir){
+  message(res_dir)
+  psc.in = peaksat_config(res_dir, stat = ifelse(input_use_pval, "pValue", "qValue"))
+  load_counts(psc.in, min_signalValue = c(1, 5))
+})
+dt.in = rbindlist(input_res, idcol = "input_depth")
+dt.in[, c("cell", "mark", "rep") := tstrsplit(sample, "[_\\.]", keep = 1:3)]
+
+input_depth_lev = unique(dt.in$input_depth)
+o = order(as.numeric(sub("M", "", input_depth_lev)))
+input_depth_lev = input_depth_lev[o]
+# dt.in = dt.in[order(inpu)]
+dt.in$input_depth = factor(dt.in$input_depth, levels = input_depth_lev)
+
+dt.in = dt.in[order(read_count)]
+# dt.in[, read_depth := frank(read_count, ties.method = )*10, .(sample, input_depth, signal_cutoff)]
+dt.in$read_depth = paste0(round(dt.in$read_count/1e6), "M")
+dt.in$read_depth = factor(dt.in$read_depth, levels = unique(dt.in$read_depth))
+# dt.in$read_depth = factor(dt.in$read_depth)
+
+dt.in[, peak_str := round(peak_count/1e3, 1)]
+# dt.in = dt.in[cell != "10A-AT1-DCIS"]
+dt.in$cell %>% table
+```
+
+```{r input saturation plots cutoff 1, fig.width=9, fig.height=fig_height}
+txt_size = 2.6
+# color_threshold = quantile(dt.in[signal_cutoff==1]$peak_count, .7)
+sel_cell = unique(dt.in$cell)[1]
+
+dt.in$cell = factor(dt.in$cell, levels = c("MCF10A", "MCF10AT1", "MCF10CA1a", "MCF10DCIS"))
+dt.in = dt.in[order(cell)]
+
+todo = expand.grid(
+  rep = unique(dt.in$rep),
+  cell = unique(dt.in$cell)
+)
+sel_mark = "H4K5ac"
+dt.in[, facet_x := paste(mark, rep)]
+dt.in$facet_x = factor(dt.in$facet_x, levels = unique(dt.in$facet_x))
+
+for(sig_cutoff in c(1, 5)){
+  for(sel_mark in c("H4K5ac", "H4K8ac")){
+    plots_input_saturation_sig1 = lapply(seq_len(nrow(todo)), function(i){
+      plot_dt = dt.in[mark == sel_mark & cell == todo$cell[i] & rep == todo$rep[i] & signal_cutoff == sig_cutoff]
+      color_threshold = quantile(plot_dt$peak_count, .7)
+      ggplot(plot_dt, 
+             aes(x = read_depth, 
+                 y = input_depth, 
+                 fill = peak_count, 
+                 label = peak_str)) + 
+        scale_x_discrete(labels = function(x)sub("M", "", x)) +
+        scale_y_discrete(labels = function(x)sub("M", "", x)) +
+        # coord_fixed() +
+        geom_raster(show.legend = FALSE) + 
+        geom_text(aes(color = peak_count > color_threshold), show.legend = FALSE, size = txt_size) +
+        facet_grid(cell~facet_x, scales = "free") +
+        scale_fill_continuous(labels = function(x)x/1e3) +
+        scale_color_manual(values = c("FALSE" = "gray70", "TRUE" = "black")) +
+        theme(legend.position = "bottom", 
+              panel.background = element_blank(), 
+              panel.grid = element_blank(), 
+              legend.text = element_text(size = 8)) +
+        labs(
+          # title = paste(sel_mark, todo$cell[i], todo$rep[i]), 
+          # subtitle = paste(sep = "\n", "Input depth vs ChIP depth", "signalValue > 1", ifelse(input_use_pval, "pValue", "qValue")), 
+          fill = "peak count (k)",
+          x = "ChIP read depth (M)",
+          y = "input read depth (M)")
+    })
+    pg_input_saturation_sig1 = cowplot::plot_grid(plotlist = plots_input_saturation_sig1, ncol = 2)
+    pg_input_saturation_sig1.w_title = cowplot::plot_grid(
+      ncol = 1, rel_heights = c(1, 22),
+      ggplot() + theme_void() + 
+        labs(title = paste(sep = "\n", "Input depth vs ChIP depth"), 
+             subtitle = paste(sep = "\n", "signalValue >", sig_cutoff, ifelse(input_use_pval, "pValue", "qValue"))),
+      pg_input_saturation_sig1
+    )
+    plot(pg_input_saturation_sig1.w_title)
+    # ggplot(dt.in[signal_cutoff==1], 
+    #        aes(x = read_depth, y = input_depth, 
+    #            fill = peak_count, label = peak_str)) + 
+    #   scale_x_discrete(labels = function(x)sub("M", "", x)) +
+    #   scale_y_discrete(labels = function(x)sub("M", "", x)) +
+    #   geom_raster() + 
+    #   geom_text(aes(color = peak_count > color_threshold), show.legend = FALSE, size = txt_size) +
+    #   facet_grid(cell~mark) +
+    #   scale_fill_continuous(labels = function(x)x/1e3) +
+    #   scale_color_manual(values = c("FALSE" = "gray50", "TRUE" = "black")) +
+    #   theme(legend.position = "bottom", 
+    #         panel.background = element_blank(), 
+    #         panel.grid = element_blank(), 
+    #         legend.text = element_text(size = 8)) +
+    #   labs(title = "Input depth vs ChIP depth", subtitle = "signalValue > 1", fill = "peak count (k)",
+    #        x = "ChIP read depth (%)", y = "input read depth (M)")
+    
+    ggsave(res_file(paste0("fig3_", 
+                           sel_mark, "_inputs_signalValue_", 
+                           sig_cutoff, "_", 
+                           ifelse(input_use_pval, "pValue", "qValue"), ".heatmap.pdf")), 
+           pg_input_saturation_sig1.w_title,
+           # width = 9, height = 18)
+           width = 9, height = fig_height)
+  }
+}
+```
+
+
+
+```{r, fig.width=3.5, fig.height=8}
+table(dt.in$read_depth)
+dt.in_sel = dt.in[grepl("100.1", name)]
+dt.in_sel = dt.in_sel[order(input_depth)]
+dt.in_sel[, input_num := as.numeric(sub("M", "", input_depth))]
+dt.in_sel = dt.in_sel[input_num <= 70]
+# dt.in_sel[, input_num := 1e6*as.numeric(sub("M", "", input_depth))]
+# dt.in_sel = dt.in_sel[order(input_num)]
+for(sig_value in c(1, 5)){
+  plots = lapply(levels(dt.in_sel$cell), function(sel_cell){
+    ggplot(dt.in_sel[signal_cutoff==sig_value & cell == sel_cell], 
+           aes(x = input_num, y = peak_count, group = sample, color = rep)) + 
+      geom_path() +
+      facet_grid(cell~mark, scales = "free_x") +
+      scale_color_manual(values = c(rep1 = "#da0000ff", rep2 = "#0000faff")) +
+      labs(x = "input read count (M)", y = "peak count (k)") +
+      # scale_x_continuous(labels = function(x)x/1e6) +
+      # scale_x_discrete(labels = function(x)sub("M", "", x)) +
+      scale_y_continuous(labels = function(x)x/1e3) +
+      # geom_vline(xintercept = 60e6, linetype = 2) +
+      cowplot::theme_cowplot() + 
+      theme(axis.text = element_text(size = 6))
+  })
+  pg_input_lines = cowplot::plot_grid(ncol = 1, rel_heights = c(1, 15),
+                                      ggplot() + theme_void() + 
+                                        labs(title = paste(sep = "\n",
+                                                           paste("signalValue >=", sig_value),
+                                                           paste(ifelse(input_use_pval, "pValue", "qValue"), "< .01"))),
+                                      cowplot::plot_grid(
+                                        plotlist = plots, ncol = 1
+                                      )
+  )
+  plot(pg_input_lines)
+  ggsave(res_file(paste0("fig3_inputs_signalValue_", 
+                         sig_value, "_", 
+                         ifelse(input_use_pval, "pValue", "qValue"), ".lines.pdf")), 
+         pg_input_lines,
+         width = 3.5, height = 8)
+}
+```
+
+Input caps out at 50M in this analysis but I think I need to go up to 70M to show saturation.
+
+## ssvQC
+
+Configure ssvQC
+
+```{r sqc_filter_signalValue}
+sqc_filter_signalValue = function(sqc, min_sig = 3){
+  sqc = ssvQC.prepFeatures(sqc)
+  
+  sqc@features_config@loaded_features = lapply(sqc@features_config@loaded_features, function(peak_grs){
+    lapply(peak_grs, function(x)subset(x, signalValue > min_sig))
+  })
+  
+  sqc@features_config@overlap_gr = list()
+  sqc@features_config@assessment_gr = list()
+  
+  sqc = ssvQC.prepFeatures(sqc)
+  sqc
+}
+
+sqc_filter_signalValue.1 = function(sqc, min_sig = 1){
+  sqc = ssvQC.prepFeatures(sqc)
+  
+  sqc@features_config@loaded_features = lapply(sqc@features_config@loaded_features, function(peak_grs){
+    lapply(peak_grs, function(x)subset(x, signalValue > min_sig))
+  })
+  
+  sqc@features_config@overlap_gr = list()
+  sqc@features_config@assessment_gr = list()
+  
+  sqc = ssvQC.prepFeatures(sqc)
+  sqc
+}
+
+
+sqc_top_signalValue = function(sqc, top_n = 1e4){
+  sqc = ssvQC.prepFeatures(sqc)
+  
+  sqc@features_config@loaded_features = lapply(sqc@features_config@loaded_features, function(peak_grs){
+    lapply(peak_grs, function(x){
+      x[order(x$signalValue, decreasing = TRUE)][seq(1, min(top_n, length(x)))]
+    })
+  })
+  
+  sqc@features_config@overlap_gr = list()
+  sqc@features_config@assessment_gr = list()
+  
+  sqc = ssvQC.prepFeatures(sqc)
+  sqc
+}
+
+sqc_select_fun = sqc_filter_signalValue.1
+```
+
+
+```{r ssvQC config}
+suppressPackageStartupMessages({
+  library(ssvQC)
+})
+
+qc_bams = dir("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/", pattern = "rep.+bam$", full.names = TRUE)
+# qc_bams = qc_bams[!grepl("input", basename(qc_bams))]
+# qc_bams = c(qc_bams,  "/slipstream/galaxy/uploads/working/qc_framework/output_AF_MCF10_CTCF/MCF10A_input_R1/MCF10A_input_R1.bam")
+
+cells = sapply(strsplit(basename(qc_bams), "_"), function(x)x[1])
+marks = sapply(strsplit(basename(qc_bams), "_"), function(x)x[2])
+marks = toupper(marks)
+reps = sapply(strsplit(basename(qc_bams), "[_\\.]"), function(x)x[3])
+
+qc_sig = QcConfigSignal.files(qc_bams)
+qc_sig$meta_data$cells = cells
+qc_sig$meta_data$marks = marks
+qc_sig$meta_data$reps = reps
+qc_sig$meta_data$name = paste(cells, marks, reps, sep = "_")
+qc_sig$meta_data$name_split = paste(cells, marks, reps, sep = "\n")
+
+qc_sig$meta_data$name = sub("_R1", "", qc_sig$meta_data$name)
+qc_sig$meta_data$name_split = sub("\nR1", "", qc_sig$meta_data$name_split)
+
+qc_sig$color_by = "cells"
+
+qc_sig$run_by = "marks"
+qc_sig$to_run_reference = "INPUT"
+# plot(qc_sig)
+
+qc_np = "peaksat_outputs/peak_saturation_10A_H4ac_seq1_2_and_3.matched_inputs/results_qValue_010/" %>%
+  dir(pattern = "rep", full.names = TRUE) %>%
+  dir(pattern = "100.+narrowPeak$", full.names = TRUE)
+# qc_np = qc_np[!grepl("CA1", qc_np)]
+
+cells = sapply(strsplit(basename(dirname(qc_np)), "[_\\.]"), function(x)x[3])
+marks = sapply(strsplit(basename(dirname(qc_np)), "[_\\.]"), function(x)x[4])
+marks = toupper(marks)
+reps = sapply(strsplit(basename(dirname(qc_np)), "[_\\.]"), function(x)x[5])
+
+np_meta = data.frame(file = qc_np)
+np_meta$cells = cells
+np_meta$marks = marks
+np_meta$reps = reps
+np_meta$name = paste(cells, marks, reps, sep = "_")
+np_meta$name_split = paste(cells, marks, reps, sep = "\n")
+
+qc_feat = QcConfigFeatures(np_meta, color_by = "cells", run_by = "marks")
+
+
+sqc = ssvQC(qc_feat, qc_sig)
+sqc = sqc_select_fun(sqc)
+```
+
+```{r qc init prep, fig.width=9, fig.height=10}
+qc_bams.init = c(
+  dir("bam_file_inputs/bam_files_H4_ac_old_seq", pattern = "rep.+bam$", full.names = TRUE),
+  dir("bam_file_inputs/bam_files_H4_ac_new_seq/", pattern = "CA1a.+rep.+bam$", full.names = TRUE))
+
+# qc_bams.init = qc_bams.init[!grepl("CA1", qc_bams.init)]
+# qc_bams.init = qc_bams.init[!grepl("input", basename(qc_bams.init))]
+# qc_bams.init = c(qc_bams.init,  "/slipstream/galaxy/uploads/working/qc_framework/output_AF_MCF10_CTCF/MCF10A_input_R1/MCF10A_input_R1.bam")
+
+cells = sapply(strsplit(basename(qc_bams.init), "_"), function(x)x[1])
+marks = sapply(strsplit(basename(qc_bams.init), "_"), function(x)x[2])
+marks = toupper(marks)
+reps = sapply(strsplit(basename(qc_bams.init), "[_\\.]"), function(x)x[3])
+
+qc_sig.init = QcConfigSignal.files(qc_bams.init)
+qc_sig.init$meta_data$cells = cells
+qc_sig.init$meta_data$marks = marks
+qc_sig.init$meta_data$reps = reps
+qc_sig.init$meta_data$name = paste(cells, marks, reps, sep = "_")
+qc_sig.init$meta_data$name_split = paste(cells, marks, reps, sep = "\n")
+
+qc_sig.init$meta_data$name = sub("_R1", "", qc_sig.init$meta_data$name)
+qc_sig.init$meta_data$name_split = sub("\nR1", "", qc_sig.init$meta_data$name_split)
+
+qc_sig.init$color_by = "cells"
+
+qc_sig.init$run_by = "marks"
+qc_sig.init$to_run_reference = "INPUT"
+
+qc_np.init = c(
+  "peaksat_outputs/peak_saturation_10A_H4ac_seq1_only/results_qValue_010/" %>%
+    dir(pattern = "rep", full.names = TRUE) %>%
+    dir(pattern = "100.+narrowPeak$", full.names = TRUE),
+  # qc_np.init = qc_np.init[!grepl("CA1", qc_np.init)]
+  
+  
+  "peaksat_outputs/peak_saturation_10A_H4ac_seq1_and_seq2/results_qValue_010/" %>%
+    dir(pattern = "CA1a.+rep", full.names = TRUE) %>%
+    dir(pattern = "100.+narrowPeak$", full.names = TRUE)
+  # qc_np.init = qc_np.init[!grepl("CA1", qc_np.init)]
+)
+cells = sapply(strsplit(basename(dirname(qc_np.init)), "[_\\.]"), function(x)x[3])
+marks = sapply(strsplit(basename(dirname(qc_np.init)), "[_\\.]"), function(x)x[4])
+marks = toupper(marks)
+reps = sapply(strsplit(basename(dirname(qc_np.init)), "[_\\.]"), function(x)x[5])
+
+np_meta = data.frame(file = qc_np.init)
+np_meta$cells = cells
+np_meta$marks = marks
+np_meta$reps = reps
+np_meta$name = paste(cells, marks, reps, sep = "_")
+np_meta$name_split = paste(cells, marks, reps, sep = "\n")
+
+qc_feat.init = QcConfigFeatures(np_meta, color_by = "cells", run_by = "marks")
+
+
+
+# plot(qc_feat)
+sqc.init = ssvQC(qc_feat.init, qc_sig.init)
+sqc.init = sqc_select_fun(sqc.init)
+
+sqc.init = ssvQC.plotFeatures(sqc.init)
+sqc.init$plots$features$count
+sqc.init$plots$features$euler
+sqc.init$plots$features$UpSet
+
+sqc.init$signal_config$heatmap_limit_values = c(0, 3)
+sqc.init = ssvQC.plotSignal(sqc.init)
+sqc.init = ssvQC.runAll(sqc.init)
+```
+
+```{r qc plot function, fig.width=14, fig.height=14}
+mod_x_axis = function(x){
+  x + scale_x_discrete(labels = function(x){gsub("\n", " ", x)}) +
+    theme(axis.text.x = element_text(size = 6, angle = 90, hjust = 1, vjust = .5))
+  
+}
+
+plot_qc = function(p_sqc, m = c("H4K5AC", "H4K8AC")[1]){
+  f_key = paste0(m, "_features")
+  s_key = paste0(m, "_signal")
+  cowplot::plot_grid(
+    rel_heights = c(.2, 1, 1, 1),
+    ncol = 1,
+    cowplot::plot_grid(ggplot()+theme_void() + labs(title = paste("Quality Control for", m))),
+    cowplot::plot_grid(nrow = 1, labels = c("A", "B", "C", ""),
+                       rel_widths = c(1, 1, 1, .3),
+                       {p_sqc$plots$reads[[s_key]] + 
+                           guides(fill = "none", color = "none")+ 
+                           labs(title = "Mapped reads") + theme(axis.text.x = element_text(size = 6))} %>%
+                         mod_x_axis,
+                       {p_sqc$plots$features$count[[f_key]] + guides(fill = "none", color = "none") + 
+                           labs(title = "Peak counts") + 
+                           theme(axis.text.x = element_text(size = 6))} %>%
+                         mod_x_axis,
+                       {p_sqc$plots$FRIP$per_peak[[f_key]][[s_key]] + 
+                           guides(fill = "none", color = "none") + 
+                           labs(title = "FRIP per peak")} %>%
+                         mod_x_axis,
+                       cowplot::get_legend(p_sqc$plots$reads[[s_key]])
+    ),
+    cowplot::plot_grid(labels = c("D", "E"),
+                       rel_widths = c(1.6, 1),
+                       p_sqc$plots$features$UpSet[[f_key]] + 
+                         labs(title = "Peak overlaps") +
+                         theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = .5)),
+                       p_sqc$plots$features$euler[[f_key]] + guides(fill = "none", color = "none")
+    ),
+    cowplot::plot_grid(labels = c("F", "G"),
+                       rel_widths = c(2.2, 1),
+                       p_sqc$plots$signal$heatmaps[[f_key]][[s_key]] + theme(legend.position = "bottom") + labs(title = "RPM pileup at merged peaks"),
+                       p_sqc$plots$signal$heatmaps.lines[[f_key]][[s_key]] + theme(legend.position = "bottom")  + guides(fill = "none", color = "none") + labs(title = "Average RPM per cluster")
+    )
+  )
+}
+
+plot_qc.k5 = function(p_sqc){
+  plot_qc(p_sqc, "H4K5AC")
+}
+plot_qc.k8 = function(p_sqc){
+  plot_qc(p_sqc, "H4K8AC")
+}
+```
+
+```{r qc initial plot, fig.width=14, fig.height=14}
+plot_qc.k5(sqc.init)
+ggsave(res_file("fig_qc_k5_initial.pdf"), width = 14, height = 14)
+
+plot_qc.k8(sqc.init)
+ggsave(res_file("fig_qc_k8_initial.pdf"), width = 14, height = 14)
+```
+
+Run ssvQC
+
+```{r ssvQC run}
+# sqc$features_config$consensus_fraction = 1
+options(mc.cores = 20)
+sqc$signal_config$heatmap_limit_values = c(0, 3)
+sqc = ssvQC.runAll(sqc)
+```
+
+```{r ssvQC reads, fig.height=6, fig.width=7.5}
+cowplot::plot_grid(ncol = 1, 
+                   sqc$plots$reads$H4K5AC_signal,
+                   sqc$plots$reads$H4K8AC_signal
+)
+```
+We have tons of MCF10A reads, this was mostly intentional.  The MCF10A had higher target read counts based on the peak saturation curves from round 1.
+
+Let's look at heatmaps next.
+
+There are some artifact clusters I want to remove first.
+
+```{r signalHeatmap remove artifact}
+sqc$plots$signal$heatmaps.lines$H4K5AC_features$H4K5AC_signal
+# sqc = ssvQC.removeClusters(sqc, cluster_numbers = 2, "H4K5AC_features", "H4K5AC_signal")
+
+sqc$plots$signal$heatmaps.lines$H4K8AC_features$H4K8AC_signal
+# sqc = ssvQC.removeClusters(sqc, cluster_numbers = c(2, 6), "H4K8AC_features", "H4K8AC_signal")
+
+#repeat clustering after artifacts removed.
+#this isn't fully supported yet, so we have to hack the ssvQC object
+# sqc@signal_data = list()
+# sqc = ssvQC.prepSignal(sqc)
+# sqc = ssvQC.plotSignal(sqc)
+
+# sqc = ssvQC.removeClusters(sqc, cluster_numbers = 2, "H4K5AC_features", "H4K5AC_signal")
+# sqc = ssvQC.removeClusters(sqc, cluster_numbers = c(2), "H4K8AC_features", "H4K8AC_signal")
+
+# sqc@signal_data = list()
+# sqc = ssvQC.prepSignal(sqc)
+# sqc = ssvQC.plotSignal(sqc)
+```
+
+The cleaned up heatmaps:
+
+```{r, signalHeatmap cleaned, fig.width=10, fig.height=5}
+cowplot::plot_grid(rel_widths = c(2, 1),
+                   sqc$plots$signal$heatmaps$H4K5AC_features$H4K5AC_signal + theme(legend.position = "bottom"),
+                   sqc$plots$signal$heatmaps.lines$H4K5AC_features$H4K5AC_signal + theme(legend.position = "bottom")
+)
+
+cowplot::plot_grid(rel_widths = c(2, 1),
+                   sqc$plots$signal$heatmaps$H4K8AC_features$H4K8AC_signal + theme(legend.position = "bottom"),
+                   sqc$plots$signal$heatmaps.lines$H4K8AC_features$H4K8AC_signal + theme(legend.position = "bottom")
+)
+```
+
+Global average:
+
+```{r, fig.width=10, fig.height=3.6}
+cowplot::plot_grid(
+  sqc$plots$signal$lines$H4K5AC_features$H4K5AC_signal + theme(legend.position = "bottom"),
+  sqc$plots$signal$lines$H4K8AC_features$H4K8AC_signal + theme(legend.position = "bottom")
+)
+```
+
+And finally FRIP.
+
+```{r, fig.width=8, fig.height=5}
+leg = get_legend(sqc$plots$FRIP$per_peak$H4K5AC_features$H4K5AC_signal + theme(legend.position = "bottom"))
+
+sqc@other_data$FRIP$H4K5AC_features$H4K5AC_signal[, name_split := gsub("\n", " ", name_split)]
+sqc@other_data$FRIP$H4K8AC_features$H4K8AC_signal[, name_split := gsub("\n", " ", name_split)]
+
+sqc@other_data$FRIP$H4K5AC_features$H4K5AC_signal$name_split = 
+  factor(sqc@other_data$FRIP$H4K5AC_features$H4K5AC_signal$name_split, levels = gsub("_", " ", levels(sqc$signal_config$meta_data$name)))
+sqc@other_data$FRIP$H4K8AC_features$H4K8AC_signal$name_split = 
+  factor(sqc@other_data$FRIP$H4K8AC_features$H4K8AC_signal$name_split, levels = gsub("_", " ", levels(sqc$signal_config$meta_data$name)))
+
+sqc = ssvQC.plotFRIP(sqc)
+
+p_frip_box = 
+  cowplot::plot_grid(ncol = 1, rel_heights = c(8, 1),
+                     cowplot::plot_grid(nrow = 1,
+                                        sqc$plots$FRIP$per_peak$H4K5AC_features$H4K5AC_signal + 
+                                          labs(title = "H4K5ac", subtitle = "FRIP at 1000 randomly selected consensus peaks") + 
+                                          guides(color = "none"),
+                                        sqc$plots$FRIP$per_peak$H4K8AC_features$H4K8AC_signal +
+                                          labs(title = "H4K8ac", subtitle = "FRIP at 1000 randomly selected consensus peaks")  + 
+                                          guides(color = "none")
+                     ),
+                     leg
+  )
+p_frip_box
+
+sqc$plots$FRIP$total$H4K5AC_features$H4K5AC_signal
+sqc$plots$FRIP$total$H4K8AC_features$H4K8AC_signal
+```
+
+```{r qc combined plots, fig.width=14, fig.height=14}
+plot_qc.k5(sqc)
+ggsave(res_file("fig_qc_k5_combined.pdf"), width = 14, height = 14)
+
+plot_qc.k8(sqc)
+ggsave(res_file("fig_qc_k8_combined.pdf"), width = 14, height = 14)
+```
+
+```{r}
+
+qc_dt = pc_dt[sequencing == "all_seq" & rep != "pooled" & signal_cutoff == 1]
+qc_dt$cell %>% table
+cols = unlist(sqc$signal_config$color_mapping)
+p_qc_1 = ggplot(qc_dt, aes(x = read_count, y = peak_count, color = cell, group = sample, linetype = rep)) +
+  geom_path() +
+  facet_wrap(~mark) +
+  scale_color_manual(values = cols)+
+  labs(x = "read count (M)", y = "peak count (k)") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  labs(title = "Signal cutoff 1") +
+  coord_cartesian(xlim = c(0, 50e6))
+p_qc_1
+
+qc_dt5 = pc_dt[sequencing == "all_seq" & rep != "pooled" & signal_cutoff == 5]
+p_qc_2 = ggplot(qc_dt5, aes(x = read_count, y = peak_count, color = cell, group = sample, linetype = rep)) +
+  geom_path() +
+  facet_wrap(~mark) +
+  scale_color_manual(values = cols)+
+  labs(x = "read count (M)", y = "peak count (k)", linetype = "replicate") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  labs(title = "Signal cutoff 5") +
+  coord_cartesian(xlim = c(0, 50e6))
+p_qc_2
+```
+
+```{r}
+
+```
+
+Pretty cool how the QC lines up with the peak saturation.  The global profiles and FRIP show lower enrichment in MCF10A and higher in DCIS (with 1 really good AT1 rep) and that bears through in the peak saturation in 2 ways.  1) a lower read count is required to reach saturation and 2) a higher number of reads pass a more stringent signalValue cutoff of 5.
+
+```{r}
+dir.create(res_file("QC_complete"))
+write_ssvQC.correlation(sqc, out_dir = res_file("QC_complete"))
+write_ssvQC.summary(sqc, out_dir = res_file("QC_complete"))
+
+dir.create(res_file("QC_initial"))
+write_ssvQC.correlation(sqc.init, out_dir = res_file("QC_initial"))
+write_ssvQC.summary(sqc.init, out_dir = res_file("QC_initial"))
+```
+
+## CNR
+
+```{r cnr setup, fig.width=4, fig.height=2.3}
+psc_cnr = peaksat_config("peaksat_outputs/peak_saturation_cnr2/")
+
+sel_value = 5
+
+cnr_dt = load_counts(psc_cnr, min_signalValue = c(1, sel_value))
+
+bam_files = dir("bam_file_inputs/bam_files_cnr_PR_paper2/", pattern = "bam$", full.names = TRUE)
+chip_bams = bam_files[!grepl("IgG", bam_files)]
+old2new = basename(chip_bams)
+old2new = sub(".bam$", "", old2new)
+names(old2new) = sub(".bam$", "", basename(normalizePath(chip_bams)))
+cnr_dt$sample = old2new[cnr_dt$sample]
+cnr_dt$sample %>% table
+
+cnr_dt[, c("kit", "material", "mark", "rep") := tstrsplit(sample, "_")]
+
+cnr_cols = c(fresh = "gray50", frozen = "dodgerblue", combo = "black")
+
+rep2line = c(pooled = 1, rep1 = 3, rep2 = 5)
+
+cnr_dt[, linetype := rep2line[rep]]
+
+ggplot(cnr_dt[signal_cutoff == sel_value], 
+       aes(x = read_count, y = peak_count, group = sample, color = material)) +
+  geom_path(data = cnr_dt[(material == "combo" | material == "fresh" | rep == "pooled") & signal_cutoff == sel_value], 
+            size = 1.1) +
+  # geom_path(data = cnr_dt[material != "combo" & signal_cutoff == sel_value], aes(linetype = linetype), size = 1.3) +
+  facet_wrap(~mark) +
+  scale_linetype_identity() +
+  scale_color_manual(values = cnr_cols) +
+  labs(x = "read count (M)", y = "peak count (k)") +
+  scale_x_continuous(labels = function(x)x/1e6) +
+  scale_y_continuous(labels = function(x)x/1e3) +
+  labs(title = "Cut&Run", subtitle = paste("signalValue >", sel_value))
+ggsave(res_file("fig4_cnr.pdf"), width = 4, height = 2.3)
+```
+
+## ATAC
+
+```{r atac setup, fig.width=12, fig.height=12}
+atac_stat = "qValue"
+psc_atac = peaksat_config("peaksat_outputs/peak_saturation_atac", stat = atac_stat, is_PE = TRUE)
+
+sel_value = 3
+
+```
+
+```{r atac plot functions}
+my_atac_figs_reps = function(sel_value){
+  atac_dt = load_counts(psc_atac, min_signalValue = sel_value)
+  atac_dt[, c("cell", "rep") := tstrsplit(sample, "_", keep = 1:2)]
+  atac_dt[, read_countM := read_count / 1e6]
+  
+  ### reps
+  p_dt.atac = atac_dt[signal_cutoff == sel_value]
+  p_dt.atac = p_dt.atac[!grepl("pooled", rep)]
+  
+  p_dt.atac[, is_pooled := ifelse(rep == "pooled", "pooled", "replicate")]
+  
+  p_atac = ggplot(p_dt.atac, 
+                  aes(x = read_countM, y = peak_count, group = sample))
+  
+  ann_dt = split(p_dt.atac, p_dt.atac$sample)
+  for(a_dt in ann_dt){
+    p_atac = p_atac + annotate("path", x= a_dt$read_countM, y = a_dt$peak_count, color = "gray")
+  }
+  p_atac = p_atac + 
+    geom_path(aes(color = is_pooled), size = 1.3, show.legend = FALSE) +
+    facet_wrap(~cell+rep) +
+    scale_color_manual(values = c("replicate"= "black", "pooled" = "darkorange")) +
+    labs(x = "read count (M)", 
+         y = "peak count (k)", 
+         linetype = "replicate", 
+         color = "", 
+         title = "ATAC-seq", 
+         subtitle = ifelse(sel_value > 1, paste("signalValue >", sel_value), "no signalValue cutoff")) +
+    # scale_x_continuous(labels = function(x)x/1e6) +
+    scale_y_continuous(labels = function(x)x/1e3)
+  plot(p_atac)
+  # p_atac + coord_cartesian(xlim = c(0, 200), ylim = c(0, 150e3))
+  ggsave(res_file(paste0("fig4_atac.reps.signalValue_", sel_value, ".", atac_stat, ".pdf")), width = 7, height = 7)
+}
+
+my_atac_figs_pooled = function(sel_value){
+  atac_dt = load_counts(psc_atac, min_signalValue = sel_value)
+  atac_dt[, c("cell", "rep") := tstrsplit(sample, "_", keep = 1:2)]
+  atac_dt[, read_countM := read_count / 1e6]
+  
+  ### pooled
+  p_dt.atac = atac_dt[signal_cutoff == sel_value]
+  p_dt.atac = p_dt.atac[grepl("pooled.200M", rep)]
+  
+  p_dt.atac[, is_pooled := ifelse(grepl("pooled", rep), "pooled", "replicate")]
+  
+  p_atac = ggplot(p_dt.atac, 
+                  aes(x = read_countM, y = peak_count, group = sample))
+  
+  
+  
+  if(FALSE){
+    ann_dt = split(atac_dt[signal_cutoff == sel_value & !grepl("pooled", rep)], atac_dt[signal_cutoff == sel_value & !grepl("pooled", rep)]$sample)
+    for(a_dt in ann_dt){
+      p_atac = p_atac + annotate("path", x= a_dt$read_countM, y = a_dt$peak_count, color = "gray")
+    }
+  }else{
+    ann_dt = atac_dt[signal_cutoff == sel_value & !grepl("pooled", rep)]
+    p_atac = p_atac + geom_path(data = ann_dt, color = "gray") +
+      facet_wrap(~cell)
+  }
+  
+  grps = unique(p_dt.atac$cell)
+  grps = c(grps, "replicate")
+  cols = c(seqsetvis::safeBrew(4, "Dark2"), "gray")
+  names(cols) = grps
+  
+  p_atac = p_atac + 
+    geom_path(aes(color = cell), size = 1.3, show.legend = TRUE) +
+    # facet_wrap(~cell+rep) +
+    # scale_color_brewer(values = c("replicates" = "gray", "")) +
+    scale_color_manual(values = cols) +
+    labs(x = "read count (M)", 
+         y = "peak count (k)", 
+         linetype = "replicate", 
+         color = "", 
+         title = "ATAC-seq", 
+         subtitle = ifelse(sel_value > 1, paste("signalValue >", sel_value), "no signalValue cutoff")) +
+    # scale_x_continuous(labels = function(x)x/1e6) +
+    scale_y_continuous(labels = function(x)x/1e3)
+  plot(p_atac)
+  # p_atac + coord_cartesian(xlim = c(0, 200), ylim = c(0, 150e3))
+  # ggsave(res_file("fig4_atac.pdf"), width = 4, height = 3.3)
+  ggsave(res_file(paste0("fig4_atac.pooled.signalValue_", sel_value, ".", atac_stat, ".pdf")), width = 4.2, height = 3)
+}
+
+```
+
+```{r atac reps plot, fig.width=7, fig.height=7}
+my_atac_figs_reps(1)
+my_atac_figs_reps(3)
+```
+
+```{r atac pooled plot, fig.width=4.2, fig.height=3}
+my_atac_figs_pooled(1)
+my_atac_figs_pooled(3)
+```
+
+## Compared to SPP
+
+SPP is a bunch of nonsense. Very slow nonsense.
+
+MSER interpolation (peak saturation) only completes successfully for 3 of our strongest samples.
+
+
+```{r spp load}
+mser_files = dir("spp_output/vs_MCF10A_input_R1", full.names = TRUE) %>% 
+  dir(pattern = "mser.Rds", full.names = TRUE)
+interp_files = dir("spp_output/vs_MCF10A_input_R1", full.names = TRUE) %>% 
+  dir(pattern = "mser.interplotated.Rds", full.names = TRUE)
+spp_files = dir("spp_output/vs_MCF10A_input_R1", full.names = TRUE) %>% 
+  dir(pattern = "binding.positions.Rds", full.names = TRUE)
+
+
+file.size(mser_files)
+file.size(interp_files)
+file.size(spp_files)
+
+lapply(mser_files, readRDS)
+if(FALSE){#only do once, output is slightly messed up for certain values and needs repair
+  spp_np_files = pbmcapply::pbmclapply(spp_files, function(f){
+    bp = readRDS(f)
+    spp::write.narrowpeak.binding(bp, paste0(sub(".Rds", "", f), ".narrowPeak"))
+    paste0(sub(".Rds", "", f), ".narrowPeak")
+  })
+}
+
+spp_np_files = dir("spp_output/vs_MCF10A_input_R1", full.names = TRUE) %>% 
+  dir(pattern = "binding.positions.narrowPeak", full.names = TRUE)
+any(sapply(spp_np_files, class) == "try-error")
+
+spp_np_grs = seqsetvis::easyLoad_narrowPeak(unlist(spp_np_files), file_names = basename(dirname(unlist(spp_np_files))))
+is_error = sapply(spp_np_grs, class) == "try-error"
+spp_np_files[is_error] #fix these
+
+k = file.size(interp_files) > 200
+file.size(interp_files[k])
+
+interp_files[k]
+
+interp_res = lapply(interp_files[k], readRDS)
+
+names(interp_res) = basename(dirname(interp_files[k]))
+
+spp_saturation = lapply(seq_along(interp_res), function(i){
+  nam = names(interp_res)[i]
+  msers = interp_res[[i]]
+  paste(nam, "predicted sequencing depth =",
+        round(unlist(lapply(msers,function(x) x$prediction))/1e6,5)," million tags")
+})
+spp_saturation
+writeLines(unlist(spp_saturation), res_file("spp_saturation_results.txt"))
+```
+
+```{r, fig.height=12, fig.width=10}
+seqsetvis::ssvFeatureUpset(spp_np_grs)
+k = lengths(spp_np_grs) > 0
+spp_np_grs.sig = lapply(spp_np_grs[k], function(x)subset(x, signalValue > 10))
+
+seqsetvis::ssvFeatureUpset(spp_np_grs.sig)
+ggsave(res_file("spp_upset.pdf"), width = 12, height = 10)
+```
+
+```{r spp compare, fig.width=7, fig.height=4}
+# spp_np_grs
+np_np_grs = unlist(sqc$features_config$loaded_features)
+names(np_np_grs)
+names(spp_np_grs)
+names(np_np_grs) = sub(".+features.", "", names(np_np_grs))
+names(np_np_grs) = gsub("\n", "_", names(np_np_grs))
+
+common = intersect(names(np_np_grs), names(spp_np_grs))
+names(common) = common
+
+paired_grs = lapply(common, function(nam){
+  list(macs2 = np_np_grs[[nam]], SPP = spp_np_grs[[nam]])
+})
+
+library(seqsetvis)
+make_olap = function(a_gr, b_gr){
+  table(ssvFactorizeMembTable(ssvOverlapIntervalSets(list(A = a_gr, B = b_gr)))$group)  
+}
+all_olap_grs = pbmcapply::pbmclapply(paired_grs, function(x){
+  make_olap(x$macs2, x$SPP)  
+})
+
+olap_dt = rbindlist(lapply(all_olap_grs, function(x){
+  dt = data.table(x)
+  setnames(dt, c("group", "count"))
+  dt
+}), idcol = "name")
+
+olap_dt = olap_dt[group != "none"]
+
+olap_dt[,  center_width := count[group == "A & B"] , .(name)]
+olap_dt[, xmin := -center_width / 2]
+olap_dt[, xmax := center_width / 2]
+olap_dt[group == "A", xmax := xmin]
+olap_dt[group == "A", xmin := xmin - count]
+olap_dt[group == "B", xmin := xmax]
+olap_dt[group == "B", xmax := xmax + count]
+
+olap_dt[, total := sum(count), .(name)]
+olap_dt[, count_fraction := count / total]
+
+name_lev = olap_dt[group == "A"][order(count_fraction)]$name
+olap_dt$name = factor(olap_dt$name, levels = name_lev)
+
+olap_dt[, ymax := as.numeric(name) + .45]
+olap_dt[, ymin := as.numeric(name) - .45]
+
+AB2name = c(A = "macs2", "A & B" = "macs2 & SPP", B = "SPP")
+olap_dt$group_name = AB2name[olap_dt$group]
+
+ggplot(olap_dt, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = group_name)) +
+  geom_rect() +
+  scale_y_continuous(breaks = seq_along(name_lev), labels = name_lev) +
+  labs(title = "Peak overlaps between macs2 and SPP", fill = "overlap", x = "peaks")
+ggsave(res_file("spp_overlap_to_macs2.pdf"), width = 7, height = 4)
+```
+
+```{r}
+pc_dt$signal_cutoff %>% table
+ggplot(pc_dt[sequencing == "all_seq" & rep %in% c("rep1", "rep2")], aes(x = read_count, y = peak_count, group = signal_cutoff)) +
+  geom_path() +
+  facet_grid(cell~mark+rep)
+# ssvFeatureUpset(sqc$features_config$overlapped_features$H4K5AC_features, keep.order = TRUE, sets = colnames(mcols(sqc$features_config$overlapped_features$H4K5AC_features)))
+ssvFeatureUpset(sqc$features_config$overlapped_features$H4K5AC_features, keep.order = TRUE)
+sqc.init$plots$features$count
+sqc$plots$features$count
+```
