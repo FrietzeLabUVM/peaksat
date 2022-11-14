@@ -28,9 +28,8 @@ estimate_depth.linear = function(cnt_dt, target_peaks = NULL, min_read_count = 5
   # saturation_dt[, slope := peak_count / read_count]
   # saturation_dt[, read_count * slope]
 
-
-
-  cnt_dt[, is_max := read_count == max(read_count), .(sample)]
+  cnt_dt[, under_max_reads := read_count <= max_read_count]
+  cnt_dt[, is_max := read_count == max(read_count[under_max_reads]), .(sample)]
   cnt_dt[, over_cutoff := peak_count > cutoff]
 
   min_dt = cnt_dt

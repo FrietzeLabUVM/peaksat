@@ -1,0 +1,231 @@
+---
+title: "Peaksat Read Depth Estimation"
+author: "Cong Gao"
+date: "11/04/2022"
+output: html_document
+vignette: >
+    %\VignetteIndexEntry{Overview and Use Cases}
+    %\VignetteEngine{knitr::rmarkdown}
+    %\VignetteEncoding{UTF-8}
+    %\usepackage[UTF-8]{inputenc}
+---
+
+## Introduction
+
+*peaksat* is an R package to do Peak Saturation processing and analysis. Peak Saturation consists of iteratively sub-sampling ChIP-seq bam files and repeatedly calling peaks to detect at what read depth the peak call hits a point of diminishing returns, i.e. it has reached saturation.
+
+Peak Saturation is a part of the quality control process and is useful for determining the potential benifit of deeper sequencing for improving peak calls.  When libraries are too shallow, only a semi-random subset of peaks are called.  This package provides methods for randomly subsetting bam files at fixed depth intervals and calling peaks via macs2 on each.  As a result we can produce a curve of peak count vs read count and (with enough reads) estimate the total number of peaks that are potentially callable in each sequencing library.  This also allows us to determine that either the library has reached saturation or roughly estimate how many reads would be required to reach saturation.
+
+It requires an existing installation of macs2, which can be on your PATH or specified explicitly when calling submit_peaksat_jobs() or via the PS_MACS2_PATH option.
+
+*peaksat* has primarily been tested using SGE (Sun Grid Engine) for job scheduling. It also has support for SLURM and even bash processing if neither job scheduler is available.
+
+## Objective
+
+This is an R markdown file to show how to run peaksat pipeline, we'll only focus on H4K5ac as an example.
+
+Before starting, we'll make sure peaksat is installed and loaded.
+
+```{r install_eval, include=FALSE}
+suppressPackageStartupMessages({
+  #since peaksat is only available via github at the moment, devtools is required for installation
+  if(!require("devtools")) install.packages("devtools")
+  if(!require("peaksat")) devtools::install_github("FrietzeLabUVM/peaksat")
+  
+  #These are just required for this markdown. There's a good chance you have them already.
+  if(!require("magrittr")) install.packages("magrittr")
+  if(!require("tidyverse")) install.packages("tidyverse")
+  if(!require("DT")) install.packages("DT")
+})
+```
+
+```{r install, eval=FALSE}
+#since peaksat is only available via github at the moment, devtools is required for installation
+if(!require("devtools")) install.packages("devtools")
+if(!require("peaksat")) devtools::install_github("FrietzeLabUVM/peaksat")
+
+#These are just required for this markdown. There's a good chance you have them already.
+if(!require("magrittr")) install.packages("magrittr")
+if(!require("tidyverse")) install.packages("tidyverse")
+if(!require("DT")) install.packages("DT")
+```
+
+```{r libs_eval, include=FALSE}
+suppressPackageStartupMessages({
+  library(peaksat)
+  library(magrittr)
+  library(tidyverse)
+})
+```
+
+```{r libs, eval=FALSE}
+library(peaksat)
+library(magrittr)
+library(tidyverse)
+```
+
+*peaksat* consists of 2 steps :
+
+A slow step 1 in which bam files are subsampled and then those subsasmples are used by macs2 for a peak call.
+
+Step 2 is much faster and consists of plot generation and extrapolation.
+
+## Step 1
+
+### Locate Bam Files 
+
+Prior to running peaksat, we need a vector of file paths to relevant bam files.  These bam files will be interatively subset and then used to run macs2 callpeak.
+
+```{r load bam files}
+#locate files
+bam_files = dir("/slipstream/home/conggao/ChIP_seq/MCF10_H4Kac/", full.names = TRUE, pattern = "(H4K5ac|input).+rep.+bam$")
+bam_files = bam_files[file.exists(bam_files)]
+```
+
+### Match Input Files to ChIP-seq
+
+If we want to use the appropriate input read file when calling MACS2, we need to match them to the ChIPseq file. In this case we want to match based on the cell line.
+
+```{r bam attribs}
+df = data.frame(file = bam_files)
+#parse out cell, mark, and rep information
+df$name = df$file %>% basename %>% sub(".Align.+", "", .)
+df = df %>% 
+  separate(col = "name", 
+           sep = "_", 
+           into = c("cell", "mark", "rep"), 
+           remove = FALSE)
+
+df$cell %>% table
+
+df.by_mark = split(df, df$mark)
+
+df_inputs = df.by_mark$input
+df_inputs = rename(df_inputs, input_file = file)
+df_inputs = select(df_inputs, input_file, cell)
+
+mark_grouped = df.by_mark
+mark_grouped$input = NULL
+
+#use merge to match
+todo = lapply(mark_grouped, function(mark_dt){
+  merge(mark_dt, df_inputs, by = "cell")
+})
+```
+
+### Submit Jobs
+
+Prior to submission, we need to create a peaksat_config object. This same object can be used for multiple submissions and ensures uniformity and should catch most invalid inputs.
+
+```{r peaksat_config}
+psc = peaksat_config(out_dir = "MCF10_H4Kac_Nov2022/", 
+                     stat_value = .01, 
+                     stat = "qValue", 
+                     is_PE = FALSE,
+                     job_scheduler = "SGE")
+class(psc)
+```
+
+
+```{r submission, eval=FALSE}
+ps_jobs = lapply(todo, function(td){
+  submit_peaksat_jobs(psc = psc, treat_bams = td$file, ctrl_bams = td$input_file, await_completion = FALSE)
+})
+names(ps_jobs) = NULL
+ps_jobs = unlist(ps_jobs)
+watch_jids(ps_jobs)
+```
+
+watch_jids is useful for pausing a script until step 1 jobs have completely finished.
+
+In this case we'll see something like:
+
+```{r watch_jids output, echo=FALSE}
+"pending jobs: 80......"
+```
+
+In addition to returning job ids, submit_peaksat_jobs also stores all jobs IDs globally. They can be accessed this way:
+
+```{ PS_JOB_IDSr, eval=FALSE}
+watch_jids(PS_OPTIONS$PS_JOB_IDS)
+```
+
+## Step 2
+
+### Loading Peak Counts
+
+After step 1 has finished, we use the same peaksat_config object to load all peak counts.
+
+You can adjust min_signalValue. MACS2's signalValue statistic is fold-enrichment and you should think about peak saturation in terms of what level of fold-enrichment you consider biologically relevant and worthwhile.  You will need many more reads to consistently call peaks that are lower fold-enrichment, meaning a dataset will reach saturation at fewer reads if you consider a more stringent level of fold-enrichment.
+
+```{r load_counts, message=FALSE, warning=FALSE}
+cnt_df = load_counts(psc, min_signalValue = 5)
+```
+
+If we parse out relevant sample info we can use this information to make nicer plots.
+
+```{r count attribs}
+cnt_df$sample = cnt_df$sample %>% sub(".Align.+", "", .)
+cnt_df = cnt_df %>% 
+  separate(col = "sample", 
+           sep = "_", 
+           into = c("cell", "mark", "rep"), 
+           remove = FALSE)
+cnt_df$sample = gsub("_", "\n", cnt_df$sample)
+
+```
+
+### Plot Peak Saturation Curves
+
+For relatively few samples we can look at all curves in one plot.
+
+```{r plot peak saturation curve}
+m = "H4K5ac"
+plot_peak_saturation_lines(subset(cnt_df, mark == m & rep == "rep1")) +
+  labs(title = m, subtitle = "rep1")
+```
+
+However, this rapidly gets difficult to interpret as we increase the number of samples.
+
+```{r plot too many curves}
+plot_peak_saturation_lines(subset(cnt_df, mark == m)) +
+  labs(title = m)
+```
+
+Using an alternative plotting method we can facet the data to split it up to be better understood.
+
+```{r, fig.width=5, fig.height=8.5}
+plot_peak_saturation_lines.facetted(subset(cnt_df, mark == m), color_by = "cell") +
+  facet_wrap(~sample, ncol = 2)+
+  theme(strip.text.x = element_text(hjust = 0)) +
+  labs(title = m)
+```
+
+### Estimation by Linear Regression
+
+For curves that have not reached saturation, linear regression does a good job extrapolating the number of reads required to reach saturation.
+
+
+```{r linear regression plot, fig.width=5, fig.height=8.5}
+est_lin_res = estimate_depth.linear(subset(cnt_df, mark == m), target_peaks = 20e3, max_read_count = 35e6, min_read_count = 5e6)
+est_lin_res$plots +
+  facet_wrap(~sample, ncol = 2)
+```
+
+```{r linear regression table}
+est_df = est_lin_res$estimates
+est_df$needed_read_count = (est_df$saturation_read_count - est_df$current_read_count)/1e6
+est_df = est_df[order(est_df$sample),]
+DT::datatable(est_df[, c("sample", "needed_read_count")])
+```
+
+In this case, MCF10A and MCF10CA1a will never reach the target number of reads. The data for these cell lines does not have high enough enrichment.
+
+MCF10AT1 rep1 is basically at saturation while rep2 could benefit from about 19M reads.
+
+For MCF10DCIS, rep2 is past saturation and rep1 needs only about 6M reads to reach it.
+
+
+
+
+
