@@ -9,9 +9,6 @@ make_pool_cmd(psc, bams, name, pool_script = get_pool_script())
 \arguments{
 \item{pool_script}{}
 }
-\value{
-
-}
 \description{
 make_pool_cmd
 }

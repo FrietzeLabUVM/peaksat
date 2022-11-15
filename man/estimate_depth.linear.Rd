@@ -14,9 +14,6 @@ estimate_depth.linear(
 \arguments{
 \item{max_read_count}{}
 }
-\value{
-
-}
 \description{
 Title
 }

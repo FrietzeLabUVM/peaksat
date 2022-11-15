@@ -9,9 +9,6 @@ plot_convergence_trends(olap_dt, a, b)
 \arguments{
 \item{b}{}
 }
-\value{
-
-}
 \description{
 Title
 }

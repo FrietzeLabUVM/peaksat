@@ -13,10 +13,13 @@ submit_peaksat_jobs(
 )
 }
 \arguments{
-\item{await_completion}{}
-}
-\value{
+\item{psc}{A valid peaksat_config object}
 
+\item{treat_bams}{Vector of ChIPseq bam files}
+
+\item{ctrl_bams}{Vector of input bam files parallel to ChIPseq. If NULL, macs2 will be called without using an input file.}
+
+\item{await_completion}{}
 }
 \description{
 Title

@@ -9,9 +9,6 @@ load_convergence(psc, a, b, min_signalValue = 1)
 \arguments{
 \item{min_signalValue}{}
 }
-\value{
-
-}
 \description{
 Title
 }

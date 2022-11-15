@@ -19,9 +19,6 @@ peaksat_config(
 \arguments{
 \item{out_dir}{}
 }
-\value{
-
-}
 \description{
 Title
 }

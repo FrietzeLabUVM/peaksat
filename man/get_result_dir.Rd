@@ -9,9 +9,6 @@ get_result_dir(psc)
 \arguments{
 \item{psc}{}
 }
-\value{
-
-}
 \description{
 get_result_dir
 }

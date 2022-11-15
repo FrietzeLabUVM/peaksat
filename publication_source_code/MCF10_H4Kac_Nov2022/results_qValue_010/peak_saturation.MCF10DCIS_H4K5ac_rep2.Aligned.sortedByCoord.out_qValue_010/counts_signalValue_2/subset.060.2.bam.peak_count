@@ -1,0 +1,2 @@
+peak_count name seed fraction stat cutoff PE input
+21537 subset.060.2 2 0.6 -q 0.01 SE vsInput

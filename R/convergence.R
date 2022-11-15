@@ -1,4 +1,4 @@
-#' Title
+#' load_convergence
 #'
 #' @param psc
 #' @param a

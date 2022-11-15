@@ -14,5 +14,5 @@ Depends:
     ggplot2,
     data.table
 Imports:
-RoxygenNote: 7.1.2
+RoxygenNote: 7.2.2
 biocViews: Software, ChIPSeq, Sequencing, Visualization

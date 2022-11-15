@@ -9,9 +9,6 @@ show_available_results(psc)
 \arguments{
 \item{psc}{}
 }
-\value{
-
-}
 \description{
 show_available_results
 }

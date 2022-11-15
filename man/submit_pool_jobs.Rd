@@ -14,9 +14,6 @@ submit_pool_jobs(
 \arguments{
 \item{pool_script}{}
 }
-\value{
-
-}
 \description{
 Title
 }

@@ -4,9 +4,6 @@
 \name{peaksat_config-class}
 \alias{peaksat_config-class}
 \title{Title}
-\value{
-
-}
 \description{
 Title
 }

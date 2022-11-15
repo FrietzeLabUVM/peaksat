@@ -12,9 +12,6 @@ make_submit_cmd(
   hold_jid = NULL
 )
 }
-\value{
-
-}
 \description{
 Title
 }

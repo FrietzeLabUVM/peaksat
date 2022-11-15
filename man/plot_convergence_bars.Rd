@@ -9,9 +9,6 @@ plot_convergence_bars(olap_dt, a, b)
 \arguments{
 \item{b}{}
 }
-\value{
-
-}
 \description{
 Title
 }

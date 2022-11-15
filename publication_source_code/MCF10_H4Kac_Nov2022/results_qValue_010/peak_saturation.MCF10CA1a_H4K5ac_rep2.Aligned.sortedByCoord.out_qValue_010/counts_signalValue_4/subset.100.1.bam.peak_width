@@ -1,0 +1,2 @@
+peak_width name seed fraction stat cutoff PE input
+1388061 subset.100.1 1 1 -q 0.01 SE vsInput

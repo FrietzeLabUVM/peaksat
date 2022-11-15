@@ -9,9 +9,6 @@ watch_jids(hold_jids = getOption("PS_JOB_IDS", NULL), job_scheduler = "SGE")
 \arguments{
 \item{hold_jids}{}
 }
-\value{
-
-}
 \description{
 watch_jids
 }

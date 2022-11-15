@@ -1,4 +1,8 @@
 
+track_job_ids = function(jids){
+  PS_OPTIONS$PS_JOB_IDS = c(getOption("PS_JOB_IDS", character()), jids)
+}
+
 #' Title
 #'
 #' @return
@@ -51,9 +55,9 @@ make_submit_cmd = function(psc,
 
 #' Title
 #'
-#' @param psc
-#' @param treat_bams
-#' @param ctrl_bams
+#' @param psc A valid peaksat_config object
+#' @param treat_bams Vector of ChIPseq bam files
+#' @param ctrl_bams Vector of input bam files parallel to ChIPseq. If NULL, macs2 will be called without using an input file.
 #' @param macs2_path
 #' @param submit_script
 #' @param await_completion
