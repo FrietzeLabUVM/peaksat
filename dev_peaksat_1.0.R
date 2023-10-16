@@ -1,7 +1,7 @@
 library(peaksat)
 library(data.table)
 library(ggplot2)
-
+options(PS_MACS2_PATH = "~/lab_shared/bin/macs2")
 #Key inputs are 2 parallel character vectors of bam files, 1 of ChIPs, 1 of inputs
 #Parallel means that the Input for item 1 of ChIPs is item 1 of Input, 2 with 2, 3 with 3, etc.
 #This script is meant to handle 1 mark at a time
@@ -18,7 +18,7 @@ stopifnot(length(by_input$chip) == length(by_input$input))
 check_df = data.frame(chip = by_input$chip, input = by_input$input)
 check_df
 
-psc = peaksat_config(job_scheduler = "SGE", out_dir = "~/peaksat_dev")
+psc = peaksat_config(job_scheduler = "SLURM", out_dir = "~/peaksat_dev")
 
 # Run peaksat on provided bams
 ps1_jids = submit_peaksat_jobs(psc = psc,

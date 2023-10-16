@@ -35,11 +35,13 @@ if [ $js != "SGE" ] && [ $js != "SLURM" ] && [ $js != "bash" ]; then
   exit 1
 fi
 
-if [ $js == "SGE" ]; then
-  hold="-hold_jid $hold_jid"
-fi
-if [ $js == "SLURM" ]; then
-  hold="-d afterok:$hold_jid"
+if [ -n "$hold_jid" ]; then
+  if [ $js == "SGE" ]; then
+    hold="-hold_jid $hold_jid"
+  fi
+  if [ $js == "SLURM" ]; then
+    hold="-d afterok:$hold_jid"
+  fi
 fi
 
 if [ -z $macs2_path ]; then echo --macs2 macs2 path is required. exit 1; fi
@@ -79,12 +81,14 @@ for i in 2; do
   for frac in 10 20 30 40 50 60 70 80 90; do
     if [ $js == SGE ]; then
       cmd="qsub $hold -cwd -o ${out}/sub_logs -e ${out}/sub_logs ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f .${frac} -n subset.0${frac}.${i} -s ${i} -wd ${wd} $stat_arg $g_arg $pe_arg $no_model"
+      echo $cmd
       if [ ! -f  ${wd}/subset.0${frac}.${i}_peaks.narrowPeak ]; then
         sub_out=$($cmd)
         echo $frac $i $sub_out
       fi
     elif [ $js == SLURM ]; then
       cmd="sbatch $hold ${SCRIPTS}/run_subsample_peak.sh -m $macs2_path -st $samtools_path -t $chip_bam $c_cmd -f .${frac} -n subset.0${frac}.${i} -s ${i} -wd ${wd} $stat_arg $g_arg $pe_arg $no_model"
+      echo $cmd
       if [ ! -f  ${wd}/subset.0${frac}.${i}_peaks.narrowPeak ]; then
         sub_out=$($cmd)
         echo $frac $i $sub_out
