@@ -2,7 +2,7 @@
 % Please edit documentation in R/peaksat_config.R
 \name{peaksat_config}
 \alias{peaksat_config}
-\title{Title}
+\title{peaksat_config}
 \usage{
 peaksat_config(
   out_dir = getOption("PS_OUTDIR", file.path(getwd(), "peak_saturation")),
@@ -20,7 +20,7 @@ peaksat_config(
 \item{out_dir}{}
 }
 \description{
-Title
+peaksat_config
 }
 \examples{
 psc = peaksat_config()

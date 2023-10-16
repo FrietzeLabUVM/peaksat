@@ -1,15 +1,21 @@
-#' load_convergence
+
+
+#' load_overlap_convergence
 #'
-#' @param psc
+#' @template param_sqc
 #' @param a
 #' @param b
 #' @param min_signalValue
 #'
 #' @return
 #' @export
-#'
+#' @rdname convergence
 #' @examples
-load_convergence = function(psc, a, b, min_signalValue = 1){
+#' psc = peaksat_config.example()
+#' cnv_dt = load_convergence(psc, "rep1", "rep2")
+#' plot_convergence_bars(cnv_dt, "rep1", "rep2")
+#' plot_convergence_trends(cnv_dt, "rep1", "rep2")
+load_overlap_convergence = function(psc, a, b, min_signalValue = 1){
   all_res = dir(get_result_dir(psc), full.names = TRUE)
 
   avail_res = show_available_results(psc)
@@ -41,7 +47,7 @@ load_convergence = function(psc, a, b, min_signalValue = 1){
   a_grs = peak_grs[[1]][[a_dir]]
   b_grs = peak_grs[[1]][[b_dir]]
   all_olap_grs = lapply(seq_along(a_grs), function(i){
-    table(ssvFactorizeMembTable(ssvOverlapIntervalSets(list(A = a_grs[[i]], B = b_grs[[i]])))$group)
+    table(seqsetvis::ssvFactorizeMembTable(seqsetvis::ssvOverlapIntervalSets(list(A = a_grs[[i]], B = b_grs[[i]])))$group)
   })
   names(all_olap_grs) = names(a_grs)
   olap_dt = rbindlist(lapply(all_olap_grs, function(x){
@@ -72,17 +78,14 @@ load_convergence = function(psc, a, b, min_signalValue = 1){
   olap_dt[]
 }
 
-#' Title
+#' plot_overlap_convergence_bars
 #'
-#' @param olap_dt
-#' @param a
-#' @param b
+#' @param olap_dt output from load_overlap_convergence function
+#' @rdname convergence
 #'
-#' @return
+#' @return ggplot showing stacked bars of overlaps at different subsample levels.
 #' @export
-#'
-#' @examples
-plot_convergence_bars = function(olap_dt, a, b){
+plot_overlap_convergence_bars = function(olap_dt, a, b){
   ggplot(olap_dt, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = group)) +
     geom_rect(color = "black") +
     labs(
@@ -97,17 +100,14 @@ plot_convergence_bars = function(olap_dt, a, b){
 
 
 
-#' Title
+#' plot_overlap_convergence_trends
 #'
 #' @param olap_dt
-#' @param a
-#' @param b
+#' @rdname convergence
 #'
-#' @return
+#' @return ggplot showing line plots of overlap trends at different subsample levels.
 #' @export
-#'
-#' @examples
-plot_convergence_trends = function(olap_dt, a, b){
+plot_overlap_convergence_trends = function(olap_dt, a, b){
   ggplot(olap_dt, aes(x = fraction, y = count_fraction, color = group))  +
     geom_path() +
     geom_point() +

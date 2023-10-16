@@ -30,7 +30,7 @@ setClass("peaksat_config",
            noModel = "logical"
          ))
 
-#' Title
+#' peaksat_config
 #'
 #' @param stat
 #' @param stat_value
@@ -81,4 +81,17 @@ peaksat_config = function(
       submit_script = submit_script,
       job_scheduler = job_scheduler,
       noModel = noModel)
+}
+
+#' peaksat_config.example
+#'
+#' @return A peaksat_config object using data packaged with peaksat.
+#' @export
+#'
+#' @examples
+#' psc = peaksat_config.example()
+peaksat_config.example = function(){
+  ex_dir = system.file(package = "peaksat", "extdata/example_peaksat_output")
+  psc = peaksat_config(out_dir = ex_dir, stat_value = .01)
+  psc
 }
