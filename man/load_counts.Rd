@@ -4,7 +4,7 @@
 \alias{load_counts}
 \title{load_counts}
 \usage{
-load_counts(psc, min_signalValue = 1, selection = NULL)
+load_counts(psc, min_signalValue = 1, selection = NULL, load_partial = FALSE)
 }
 \arguments{
 \item{psc}{peaksat_config object}

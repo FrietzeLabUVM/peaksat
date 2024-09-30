@@ -1,3 +1,7 @@
+# 1.0.6
+* job_scheduler missing from a few places
+* added load_partial to load_counts
+
 # 1.0.2
 
 * submit_peaksat_jobs now uses configs job_scheduler to watch jobs

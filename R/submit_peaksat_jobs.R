@@ -124,7 +124,7 @@ submit_peaksat_jobs = function(psc,
     qsub_str
   })
   jids = sapply(cmd_outs, function(cmd_out){
-    jid = capture_jid(cmd_out)
+    jid = capture_jid(cmd_out, job_scheduler = psc@job_scheduler)
     jid
   })
   PS_OPTIONS$PS_JOB_IDS = c(getOption("PS_JOB_IDS", character()), jids)

@@ -7,11 +7,12 @@
 #' @export
 #'
 #' @examples
-load_counts = function(psc, min_signalValue = 1, selection = NULL){
+load_counts = function(psc, min_signalValue = 1, selection = NULL, load_partial = FALSE){
   .general_load_info(psc,
                      min_signalValue = min_signalValue,
                      type = "count",
-                     selection = selection)
+                     selection = selection,
+                     load_partial = load_partial)
 }
 
 #' load_widths
@@ -62,7 +63,7 @@ load_peaks = function(psc, min_signalValue = 1, selection = NULL){
                      selection = selection)
 }
 
-.general_load_info = function(psc, min_signalValue = 1, type = c("count", "width", "novelty", "peaks")[1], selection = NULL){
+.general_load_info = function(psc, min_signalValue = 1, type = c("count", "width", "novelty", "peaks")[1], selection = NULL, load_partial = FALSE){
   if(is.null(selection)){
     wds = dir(get_result_dir(psc), full.names = TRUE)
     wds = wds[basename(wds) != "sub_logs"]
@@ -73,7 +74,7 @@ load_peaks = function(psc, min_signalValue = 1, selection = NULL){
     if(!all(dir.exists(wds))) stop("Invalid result directory in selection:\n", paste(wds[!all(dir.exists(wds))], collapse = "\n"))
   }
 
-  .general_load_info.wd(wds, min_signalValue = min_signalValue, type = type)
+  .general_load_info.wd(wds, min_signalValue = min_signalValue, type = type, load_partial = load_partial)
 }
 
 #' .general_load_info.wd
@@ -83,7 +84,7 @@ load_peaks = function(psc, min_signalValue = 1, selection = NULL){
 #' @return data.table of peak count vs read count.
 #'
 #' @examples
-.general_load_info.wd = function(wds, min_signalValue = 1, type = c("count", "width", "novelty", "peaks")[1]){
+.general_load_info.wd = function(wds, min_signalValue = 1, type = c("count", "width", "novelty", "peaks")[1], load_partial = FALSE){
   wds = wds[basename(wds) != "sub_logs"]
   keep = sapply(wds, function(wd){
     read_count_files = dir(wd, pattern = "read_count$", full.names = TRUE)
@@ -140,6 +141,8 @@ load_peaks = function(psc, min_signalValue = 1, selection = NULL){
     return(out_list)
   }
 
+  if(load_partial) keep = TRUE
+
   if(.Platform$OS.type == "windows" || getOption("mc.cores", 1) == 1) {
     cnt_dtl = pbapply::pblapply(wds[keep], .assemble_peak_info, min_signalValue = min_signalValue, info_name = type, peak_FUN = peak_FUN)
 
@@ -176,7 +179,19 @@ load_peaks = function(psc, min_signalValue = 1, selection = NULL){
   names(np_files) = sub("_peaks.narrowPeak", "", basename(np_files))
 
   cn = c("name", "seed", "fraction", "stat", "cutoff", "PE", "input")
-  rc_dt =  data.table::rbindlist(lapply(read_count_files, data.table::fread, col.names = c("read_count", cn)), idcol = "wd")
+  .read_count_f = function(f){
+    dt = data.table::fread(f)
+    col.names = c("read_count", cn)
+    if(ncol(dt) != length(col.names)){
+      return(NULL)
+    }
+    colnames(dt) = c("read_count", cn)
+    dt[]
+  }
+  rc_dt =  data.table::rbindlist(lapply(read_count_files, .read_count_f), idcol = "wd")
+  if(nrow(rc_dt) == 0){
+    return(NULL)
+  }
   if(info_name == "novelty"){
     ofile = .get_ofile(np_files[1], min_sig = min_sig, suffix = "novelty")
     if(file.exists(ofile)){

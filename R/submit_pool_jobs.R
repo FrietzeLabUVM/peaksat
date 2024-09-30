@@ -68,7 +68,7 @@ submit_pool_jobs = function(psc, bam_groups, bam_group_names = names(bam_groups)
   cmd_outs = lapply(cmds, system, intern = TRUE)
   if(psc@job_scheduler %in% c("SGE", "SLURM")){
     jids = sapply(cmd_outs, function(cmd_out){
-      jid = capture_jid(cmd_out)
+      jid = capture_jid(cmd_out, job_scheduler = psc@job_scheduler)
       jid
     })
   }else{
